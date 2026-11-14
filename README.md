@@ -1,18 +1,42 @@
 # Renewal Compass
-Renewal Compass is a customer success CRM for evidence-backed renewal planning. Run with Node 20 or newer; no package installation required. Start the server with `node server.mjs`, then open http://127.0.0.1:8314. Run `node --test *.test.mjs` to verify transport, source validation, unseen accounts, denied public writes and live-event reprioritization.
 
-The organizer connection is configured only on the server. Without an authorized token and game data, use a separate local static preview of `index.html` to explore fictional sample mode. Neither sample mode nor the static account export is live or submission-ready.
+An evidence-first CRM for the customer-success manager walking into Monday. For each of two accounts, see what is worth protecting, who can move it, the next three actions, what could slip, and who can close each evidence gap.
 
-## Private local discovery notes
-For private review, use `/?mode=discovery` on the local static server. This manual snapshot is neither fixture nor an MCP feed. `discovery.local.mjs` is ignored by Git and must be excluded from any public hosting directory, generated bundle, screenshots and demo until the organizer explicitly permits disclosure. A Git ignore is not a server access control: only run the private local server on loopback.
+**[Open the judge dashboard](https://renewal-compass-crm.tarun-aditya.chatgpt.site)** · **[Two-minute review guide](hosting/docs/REVIEW.md)** · **[Hosted implementation](hosting/README.md)**
 
-## Operational backend
-Run `node server.mjs` (Node 20+), with `AQ_TOKEN` set privately in server environment, one persistent `AQ_STATE_DIR` shared by the single-instance server, and an optional separate `AQ_ADMIN_KEY` for operator-only cache inspection/verified write. Bind to loopback by default; expose only after validating the snapshot fields intended for judges. The public route never returns raw cache or credentials. The backend reserves upstream slots on disk before each network call; one request per 61 seconds including failed calls and writes. Initial reads consume roughly four minutes; thereafter signals poll without page reload and the export is revisited periodically to discover newly assigned accounts. A stale abandoned lock fails closed; stop all instances and confirm no requests are running before an operator removes it. A serverless filesystem is not durable; do not use it for this rate limit. The verified account export, paperwork, and signals map to a browser-safe read model; the annual contract book is kept distinct from game agreed deal value. Signal event IDs remain stable and an authorized private plan can rank event-specific next actions. Unrecognized signals suggest verifying ownership and impact, without manufacturing a deadline or affected deal. Unseen account evaluation tests are synthetic, not judge results. Public code excludes private notes and token/cache. No dependencies required.
+### Start here
 
-### Operator note and reviewer demo
+1. Open either account and expand a contract book source. Contract value, invoices, and game commitments are distinct and are never added together.
+2. Read the three ranked actions. A proposed verification checkpoint is not a contractual deadline. The source trail explains which facts are supported and which still need checking.
+3. Open the second account and check the freshness badge. A successful check with no new events is different from a stale feed. The dashboard retains and labels its last verified snapshot on a temporary upstream failure.
 
-On the configured backend, open `/?operator=1` to reveal an operator-only form. An explicit submit and confirmation send one permitted `write_note`; use the separate app operator key, never the organizer token. The key is not persisted in browser storage. During cooldown the response shows how long to wait; there is no automatic mutation retry. Confirmed notes from this deployment appear on the relevant account. Never put confidential material in a note if the deployment's normalized board is readable to reviewers. Failed signal sync or signal data over three minutes old is labeled stale; an initial organizer check is shown as pending, not claimed.
+### Run and test
 
-### Hosted adapter
+This Node 20+ repository has no package-install step. For a safe, local sample, serve the hosted UI on loopback:
 
-The deployed Worker and its tests are under [hosting/](hosting/README.md). The Node server above is an alternative for a host with a persistent filesystem.
+```sh
+cd hosting
+python3 -m http.server 8314 --bind 127.0.0.1 --directory crm
+```
+
+Open `http://127.0.0.1:8314` in sample mode. To verify the exact production adapter, stop the preview as needed and run:
+
+```sh
+node scripts/build.mjs
+node --test worker/runtime.test.mjs
+```
+
+From repository root, `node --test *.test.mjs` covers the alternative Node backend and its independent reasoning tests. Optional browser QA (requires Playwright with Chromium): from `hosting/`, run `node tests/manager-readiness-ui.cjs`. That test uses isolated synthetic data, not organizer credentials.
+
+### Deployment boundaries
+
+The hosted adapter is a Cloudflare Worker with a D1 cache. It keeps organizer credentials server-side and uses a single shared call budget across refresh and approved writes. Public viewers see the minimized read model, not raw organizer source files or note bodies. The reviewer page is read-only. A separate operator authorization is needed to write a note. See [operating facts and limits](hosting/README.md) for the current refresh path and [verification guide](hosting/docs/REVIEW.md) for how to tell a genuine new event from fixture, replay, or a successful empty check.
+
+The root-level Node server is an alternative deployment, not the submitted service. Do not publish local discovery files, private plan settings, raw caches, or credentials.
+
+### Judge proof check · 14 November 2026
+
+The submitted service was verified without sign-in at 09:05 UTC, after deployment of Worker revision `273d894`. It returned both sourced books (£350,000 and €140,000), and the organizer signal check succeeded with zero returned events. That proves a fresh check, not a new arrival or organizer note write.
+
+- **Eastern Counties:** open Account brief → Exact sources. `paperwork:A/profile.json` backs the annual book. `fo_dpia_2` identifies the missing-document blocker; `srv_dataflow` is the engineering handoff. The first move is delivering the pack and getting Fatima to confirm receipt and the DPIA decision date.
+- **Aldermoor:** `paperwork:B/profile.json` backs the annual book. `ba_deputy_0` identifies continuity risk; the first move is documenting the deputy's rollout and naming a backup who can reproduce one rollout. The deputy's exact departure date remains unverified.

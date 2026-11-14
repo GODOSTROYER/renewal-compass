@@ -38,7 +38,7 @@ test('concurrent viewers reserve one durable upstream slot then show normalized 
   calls++; assert.equal(url,'https://questathon.aihackerscollective.com/api/public/mcp');
   assert.equal(init.headers.Authorization,'Bearer dummy-test-secret');
   assert.equal(JSON.parse(init.body).params.name,'get_my_accounts');
-  return Response.json({result:fixture});
+  return Response.json({id:JSON.parse(init.body).id,result:fixture});
  }});
  const env={DB:db,AQ_TOKEN:'dummy-test-secret',AQ_REVIEW_MODE:'normalized'};
  const ctxs=Array.from({length:12},ctx);
@@ -53,11 +53,11 @@ test('an authorized confirmed write becomes a bodyless reviewer note; never resu
  db.cache.set('get_my_accounts',{retrieved_at:new Date(time).toISOString(),name:'get_my_accounts',value:JSON.stringify(fixture)});
  let calls=0;
  const app=workerWith({now:()=>time,upstreamFetch:async(url,init)=>{
-  calls++;assert.equal(JSON.parse(init.body).params.name,'write_note');return Response.json({result:{structuredContent:{id:'ok'}}});
+  calls++;assert.equal(JSON.parse(init.body).params.name,'write_note');return Response.json({id:JSON.parse(init.body).id,result:{structuredContent:{note_id:'organizer-note-42'}}});
  }});
  const env={DB:db,AQ_TOKEN:'dummy-test',AQ_ADMIN_KEY:'operator-test',AQ_REVIEW_MODE:'normalized'};
  const send=()=>app.fetch(request('/api/admin/write-note',{method:'POST',headers:{Authorization:'Bearer operator-test'},body:JSON.stringify({account:'A',title:'Confirmed test',text:'PRIVATE BODY'})}),env,ctx());
- assert.equal((await send()).status,200);assert.equal((await send()).status,429);assert.equal(calls,1);
+ const sent=await send();assert.equal(sent.status,200);assert.equal((await sent.json()).receiptId,'organizer-note-42');assert.equal((await send()).status,429);assert.equal(calls,1);
  const context=ctx(), response=await app.fetch(request('/api/account-snapshot'),env,context);const out=await response.json();await context.settle();
  assert.equal(out.accounts[0].notes[0].title,'Confirmed test');assert(!JSON.stringify(out).includes('PRIVATE BODY'));
 });
@@ -84,4 +84,87 @@ test('a scoped hosted plan applies only to the matching account name',async()=>{
  assert(!JSON.stringify(a).includes('must be ignored'));
  const other=await read({...env,AQ_PLAN_A:JSON.stringify({...plan,accountName:'Another account'})});
  assert.notEqual(other.recommendation.decision,'Protect verified account');
+});
+
+const seed=(db,name,value,at)=>db.cache.set(name,{name,value:JSON.stringify(value),retrieved_at:new Date(at).toISOString()});
+const read=async(app,env)=>{const c=ctx(),res=await app.fetch(request('/api/account-snapshot'),env,c);await c.settle();return {status:res.status,...await res.json()};};
+const active=db=>({DB:db,AQ_TOKEN:'dummy-test',AQ_ADMIN_KEY:'operator-test',AQ_REVIEW_MODE:'normalized'});
+
+test('stale cache recovers from an SSE result on a nonclosing stream; unrelated RPC IDs are ignored',async()=>{
+ const db=fakeDb(),clock=Date.now(), age=clock-240000;let cancelled=false;
+ seed(db,'get_my_accounts',fixture,age);seed(db,'get_signals',{signals:[]},age);
+ for(const account of ['A','B'])seed(db,'get_all_paperwork:'+account,{account,records:[]},age);
+ const app=workerWith({now:()=>clock,upstreamFetch:async(url,init)=>{
+  const {id}=JSON.parse(init.body), enc=new TextEncoder();
+  return new Response(new ReadableStream({start(s){
+   s.enqueue(enc.encode('data: '+JSON.stringify({id:id-1,result:{signals:[]}})+'\n\n'));
+   const data='data: '+JSON.stringify({id,result:{structuredContent:{signals:[{id:'new',account:'A',title:'New evidence',summary:'Change'}]}}})+'\r\n\r\n';
+   s.enqueue(enc.encode(data.slice(0,7)));s.enqueue(enc.encode(data.slice(7)));
+  },cancel(){cancelled=true;}}),{headers:{'Content-Type':'text/event-stream'}});
+ }});
+ const output=await read(app,active(db));assert.equal(cancelled,true);assert.equal(output.accounts[0].signals[0].id,'new');assert.equal(output.syncHealth.signalState,'signals-present');
+ assert.equal(output.signalCheckedAt,new Date(clock).toISOString());
+});
+test('malformed successful HTTP preserves last good data; fresh empty is real; failed paperwork does not starve signals',async()=>{
+ const db=fakeDb(), start=Date.now(), age=start-240000;let clock=start;
+ seed(db,'get_my_accounts',fixture,age);
+ seed(db,'get_signals',{signals:[{id:'previous',account:'A',title:'Previously verified'}]},age);
+ const calls=[];
+ const app=workerWith({now:()=>clock,upstreamFetch:async(url,init)=>{
+  const {id,params}=JSON.parse(init.body);calls.push(params.name);
+  if(params.name==='get_all_paperwork')return Response.json({id,result:{account:'wrong',records:[]}});
+  return Response.json({id,result:calls.filter(x=>x==='get_signals').length===1?{unexpected:true}:{signals:[]}});
+ }});
+ const env=active(db);
+ const p=await read(app,env);
+ assert.equal(p.syncStatus,'stale');assert.equal(p.accounts[0].signals[0].id,'previous');assert.equal(p.signalCheckedAt,new Date(age).toISOString());
+ assert.equal(p.syncHealth.lastSignalFailureAt,new Date(start).toISOString());
+ clock+=61000;await read(app,env);clock+=61000;
+ const next=await read(app,env);
+ assert.deepEqual(calls,['get_signals','get_all_paperwork','get_signals']);
+ assert.equal(next.syncHealth.signalState,'fresh-empty');assert.equal(next.accounts[0].signals.length,0);
+ assert(!next.syncHealth.lastSignalFailureAt);
+});
+test('organizer confirmation survives local note index write failure',async()=>{
+ const db=fakeDb(), now=Date.now(), old=db.prepare.bind(db);seed(db,'get_my_accounts',fixture,now);
+ db.prepare=sql=>sql.includes('INSERT INTO quest_notes')?{bind(){return this;},async run(){throw Error('D1 unavailable');}}:old(sql);
+ const app=workerWith({now:()=>now,upstreamFetch:async(url,init)=>Response.json({id:JSON.parse(init.body).id,result:{structuredContent:{ok:true}}})});
+ const req=()=>request('/api/admin/write-note',{method:'POST',headers:{Authorization:'Bearer operator-test'},body:JSON.stringify({account:'A',title:'Test unit',text:'Text'})});
+ const result=await app.fetch(req(),active(db),ctx());assert.deepEqual(await result.json(),{ok:true,reviewerIndexWritten:false});
+ assert.equal((await app.fetch(req(),active(db),ctx())).status,429);
+});
+
+test('stale signals go first, then periodic roster and both paperwork refreshes get through under continuous viewing',async()=>{
+ const db=fakeDb(), start=Date.now(), age=start-30*60000;let clock=start;
+ seed(db,'get_my_accounts',fixture,age);seed(db,'get_signals',{signals:[]},age);
+ for(const account of ['A','B'])seed(db,'get_all_paperwork:'+account,{account,records:[]},age);
+ const calls=[];
+ const app=workerWith({now:()=>clock,upstreamFetch:async(url,init)=>{
+  const {id,params}=JSON.parse(init.body), ac=params.arguments.account;
+  calls.push([params.name,ac??null,clock]);
+  const result=params.name==='get_my_accounts'?{...fixture,accounts:[{id:'A',name:'Roster refreshed'}]}:
+   params.name==='get_signals'?{signals:[{id:'live',account:'A',title:'Fresh signal'}]}:{account:ac,records:[]};
+  return Response.json({id,result});
+ }});
+ const env=active(db), first=await read(app,env);
+ assert.equal(calls[0][0],'get_signals');assert.equal(first.syncHealth.signalState,'signals-present');
+ for(let i=1;i<=20;i++){clock=start+30000*i;await read(app,env);}
+ assert(calls.some(([name])=>name==='get_my_accounts'));
+ for(const id of ['A','B'])assert(calls.some(([name,ac])=>name==='get_all_paperwork'&&ac===id));
+ assert(calls.every(([, ,ts],i)=>i===0||ts-calls[i-1][2]>=61000));
+ const final=await read(app,env);
+ assert.equal(final.accounts[0].name,'Roster refreshed');
+ assert(Date.parse(final.syncHealth.accountsCheckedAt)>age);
+ assert(Object.values(final.syncHealth.paperworkCheckedAt).every(when=>Date.parse(when)>age));
+});
+
+test('ambiguous or contradictory note acknowledgements never confirm or create a reviewer row',async()=>{
+ const db=fakeDb();let clock=Date.now();seed(db,'get_my_accounts',fixture,clock);
+ for(const result of [{},{structuredContent:{}},{content:[{type:'text',text:'{}'}]},{structuredContent:{note_id:'test-note-1',success:false}}]){
+  const app=workerWith({now:()=>clock,upstreamFetch:async(url,init)=>Response.json({id:JSON.parse(init.body).id,result})});
+  const req=request('/api/admin/write-note',{method:'POST',headers:{Authorization:'Bearer operator-test'},body:JSON.stringify({account:'A',title:'Test unit',text:'Text'})});
+  const response=await app.fetch(req,active(db),ctx());
+  assert.equal(response.status,502);assert.match((await response.json()).error,/not confirmed/);assert.equal(db.notes.length,0);
+  clock+=61000;
+ }
 });

@@ -23,6 +23,37 @@ function sourceTime(v){
  const parsed=new Date(v);
  return Number.isNaN(parsed.valueOf())?String(v):parsed.toISOString().replace('T',' ').slice(0,16)+' UTC';
 }
+function validSources(account,ids){const available=new Set((account.evidence??[]).map(x=>x.id));return [...new Set(ids??[])].filter(id=>available.has(id));}
+function calendarDate(value){return typeof value==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(value)&&!Number.isNaN(Date.parse(value))&&new Date(value).toISOString().slice(0,10)===value;}
+function actionTiming(account,action){
+ const timing=action.timing??{},raw=timing.text??action.dueDate??(Number.isInteger(account.move)&&Number.isInteger(action.move)?remaining(account.move,action.move):'No deadline recorded');
+ const verified=timing.kind==='sourced-date'&&calendarDate(timing.date)&&validSources(account,timing.evidenceIds).length;
+ return {text:verified?timing.date:raw,label:verified?'Sourced deadline':timing.kind==='proposed'?'Proposed target':'Timing recorded',verified:Boolean(verified),verifyWith:timing.verifyWith??action.owner??'Unassigned; manager to name an owner'};
+}
+function actionCard(account,action,index){
+ const timing=actionTiming(account,action),sources=validSources(account,action.evidenceIds),sourceSet=new Set(sources);
+ const risk=(account.risks??[]).find(x=>(x.evidenceIds??[]).some(id=>sourceSet.has(id)));
+ const trigger=typeof action.riskTrigger==='string'?action.riskTrigger:action.riskTrigger?.text??risk?.title;
+ const body=add(el('div',null,'action-body'),el('strong',action.action??'Action pending'),add(el('div',null,'action-meta'),metadata('Owner',action.owner),metadata(timing.label,timing.text)),metadata('Deal',action.deal??'Not assigned to a specific deal'),metadata('Done when',action.success));
+ body.append(metadata('Risk trigger',trigger??'Not linked; validate with the action owner'));
+ if(!timing.verified){const verify=add(el('div',null,'timing-check'),el('span','Calendar deadline not verified','timing-label'),el('p','Confirm the exact date with '+timing.verifyWith+'. Relative timing is not a calendar commitment.'));body.append(verify);}
+ const checkpoint=action.proposedCheckpoint;
+ if(calendarDate(checkpoint?.date)&&checkpoint?.purpose&&checkpoint?.basis)body.append(add(el('div',null,'proposed-checkpoint'),el('span','Proposed CRM checkpoint · '+checkpoint.date,'timing-label'),el('p',checkpoint.purpose),metadata('Basis',checkpoint.basis),el('p','Planning proposal, not a customer-agreed deadline.','metadata'),links(validSources(account,checkpoint.evidenceIds))));
+ if(action.origin)body.append(metadata('Basis',action.origin));
+ body.append(sources.length?add(el('div',null,'action-provenance'),el('span','Action sources','meta-label'),links(sources)):el('p','No exact source is attached to this action. Validate it before committing.','source-missing'));
+ return add(el('li',null,'action-item'),el('span',String(index+1).padStart(2,'0'),'action-number'),body);
+}
+function freshnessPanel(account){
+ const stale=snapshot.syncStatus==='stale',signals=account.signals?.length??0,notes=account.notes?.length??0,hasEventCoverage=Array.isArray(account.signals)&&Array.isArray(account.notes);
+ const n=el('aside',null,'snapshot-context'+(stale?' is-stale':''));n.setAttribute('aria-label','Snapshot provenance');
+ const title=stale?'Saved account brief · refresh not confirmed':snapshot.mode==='live'?'Account snapshot provenance':snapshot.mode==='fixture'?'Illustrative snapshot':'Manual snapshot';
+ n.append(add(el('div',null,'snapshot-heading'),icon(stale?'clock':'check'),el('strong',title)),el('p','Account source: '+sourceTime(snapshot.sourceAt)+' · Signal check: '+sourceTime(snapshot.signalCheckedAt)),el('p',hasEventCoverage?signals+' signal'+(signals===1?'':'s')+' · '+notes+' note'+(notes===1?'':'s')+' returned for this account.'+(signals===0&&notes===0?' This is an empty response, not evidence that there are no account risks.':''):'Event coverage is not included in this snapshot. No zero-event conclusion is implied.'));
+ const health=snapshot.syncHealth??{},paperwork=health.paperworkCheckedAt?.[account.id];
+ if(health.accountsCheckedAt||paperwork)n.append(el('p','Accounts checked: '+sourceTime(health.accountsCheckedAt)+' · Paperwork checked: '+sourceTime(paperwork),'snapshot-health'));
+ if(health.lastSignalFailureAt)n.append(el('p','Signal refresh last failed: '+sourceTime(health.lastSignalFailureAt)+(health.signalRetryAt?' · Retry available after '+sourceTime(health.signalRetryAt):''),'snapshot-health'));
+ if(stale)n.append(el('p','Use the sourced account facts below; verify changing deadlines and event status before acting. Refresh data to retry.','snapshot-warning'));
+ return n;
+}
 function render(){
  $('accounts').replaceChildren();
  for(const a of snapshot.accounts){let b=add(el('button'),icon('building','account-icon'),el('span',a.name),el('span',String(a.deals?.length??0)+((a.deals?.length??0)===1?' deal':' deals'),'account-count'));b.dataset.accountId=a.id;b.setAttribute('aria-pressed',a.id===current);b.addEventListener('click',()=>{current=a.id;render();[...$('accounts').children].find(n=>n.dataset.accountId===a.id)?.focus()});$('accounts').append(b)}
@@ -40,10 +71,12 @@ function render(){
  const routes=el('div',null,'brief-nav');
  routes.setAttribute('aria-label','Jump to a judging answer');
  routes.append(jump('Buying group','deals'),jump('Top 3 actions','actions'),jump('Timed risks','risks'),jump('Missing facts','gaps'),jump('Exact sources','evidence'));
- overview.append(metrics);out.append(overview,routes);
+ overview.append(metrics);out.append(overview,freshnessPanel(a),routes);
  const r=a.recommendation, grid=el('div',null,'grid'), plan=card('Top actions',true);plan.id=blockId('actions');
- if(r){plan.append(add(el('div',null,'decision-context'),metadata('Confidence',r.confidence),el('p',r.reason??'','decision-reason')),metadata('Biggest unknown',r.unknown),links(r.evidence));list(plan,prioritizedActions(a).slice(0,3),(x,i)=>add(el('li',null,'action-item'),el('span',String(i+1).padStart(2,'0'),'action-number'),add(el('div',null,'action-body'),el('strong',x.action??'Action pending'),add(el('div',null,'action-meta'),metadata('Owner',x.owner),metadata('Due',x.dueDate??remaining(a.move,x.move))),x.deal?metadata('Deal',x.deal):'',metadata('Done when',x.success),x.origin?metadata('Basis',x.origin):'',links(x.evidenceIds))), 'No actions recorded.')}
+ if(r){plan.append(add(el('div',null,'decision-context'),metadata('Confidence',r.confidence),el('p',r.reason??'','decision-reason')),metadata('Biggest unknown',r.unknown),links(r.evidence));list(plan,prioritizedActions(a).slice(0,3),(x,i)=>actionCard(a,x,i), 'No actions recorded.')}
  else empty(plan,'Make no recommendation until there is evidence.');
+ const pendingTiming=prioritizedActions(a).slice(0,3).filter(x=>!actionTiming(a,x).verified);
+ if(pendingTiming.length)plan.insertBefore(el('p',pendingTiming.length+' of '+prioritizedActions(a).slice(0,3).length+' ranked actions need an exact calendar deadline. The named action owner must verify it before a customer commitment.','timing-summary'),plan.querySelector('ol'));
  const quality=card('Decision quality checks',true);
  list(quality,reviewAccount(a),x=>el('li',x.message), 'No gaps flagged by the local checks. This is not an organizer score.');
  const deals=card('Deals & buying groups',true),stake=card('Account contacts'),evidence=card('Evidence ledger',true),timeline=card('Account activity');
@@ -81,8 +114,9 @@ function render(){
  const risks=card('Timed risks'),gaps=card('Missing facts'),notes=card('Signals and notes',true);notes.id=blockId('signals');stake.classList.add('contacts');timeline.classList.add('timeline');quality.classList.add('quality');
  risks.id=blockId('risks');gaps.id=blockId('gaps');
  list(risks,a.risks,x=>add(el('li'),el('strong',x.title),metadata('Timing',x.dueDate??remaining(a.move,x.dueMove)),metadata('Impact',x.impact),links(x.evidenceIds)),'No sourced timed risks recorded.');
- list(gaps,a.gaps,x=>add(el('li'),el('strong',x.question),metadata('Why it matters',x.why),metadata('Ask',x.ask),links(x.evidenceIds)),'No explicit discovery gaps recorded.');
- list(notes,[...(a.signals??[]),...(a.notes??[])],x=>add(el('li'),el('strong',x.title??x.kind??'Signal'),el('p',x.text),metadata('Reported',x.at),x.arrivedAt?metadata('Received',x.arrivedAt):'',links(x.evidenceIds)),'No verified live signals or notes loaded.');
+ const timingGaps=pendingTiming.filter((x,i,all)=>all.findIndex(y=>(y.deal??y.action)===(x.deal??x.action))===i).map(x=>({question:'What is the exact calendar deadline for '+(x.deal??x.action)+'?',why:'Recorded timing: '+actionTiming(a,x).text+'. A relative window cannot be treated as a verified date.',ask:actionTiming(a,x).verifyWith,success:'Owner records an exact date, confirms it with the decision-route contact and attaches the source. Until then, keep the deadline unverified.',evidenceIds:validSources(a,x.evidenceIds)}));
+ list(gaps,[...timingGaps,...(a.gaps??[])],x=>add(el('li'),el('strong',x.question),metadata('Why it matters',x.why),metadata('Confirm with',x.ask??'Unassigned; manager to name an owner'),metadata('Closure test',x.success??'Record the answer and its exact source before treating this gap as resolved'),links(x.evidenceIds)),'No explicit discovery gaps recorded.');
+ list(notes,[...(a.signals??[]),...(a.notes??[])],x=>add(el('li'),el('strong',x.title??x.kind??'Signal'),el('p',x.text),metadata('Reported',x.at),x.arrivedAt?metadata('Received',x.arrivedAt):'',links(x.evidenceIds)),(snapshot.syncStatus==='stale'?'The last saved response contains no signals or notes. Refresh is not confirmed; event coverage may be incomplete.':'The current response contains no signals or notes for this account. This does not clear the sourced risks or missing facts above.'));
  out.append(add(grid,plan,deals,risks,gaps,notes,evidence,stake,timeline,quality));
  out.querySelectorAll('.grid>.card').forEach((n,i)=>n.style.setProperty('--reveal-delay',Math.min(i,5)*45+'ms'));
  document.title=a.name+' · Renewal Compass';
@@ -120,21 +154,22 @@ async function load(){
  refresh.disabled=true;refresh.textContent='Refreshing…';
  const mode=$('status').querySelector('.status-mode'),detail=$('status').querySelector('.status-detail');
  try{
-  const next=await adapter.load(),changed=JSON.stringify(snapshot?.accounts)!==JSON.stringify(next.accounts);
+  const next=await adapter.load(),changed=JSON.stringify(snapshot)!==JSON.stringify(next);
   snapshot=next;current=snapshot.accounts.some(x=>x.id===current)?current:snapshot.accounts[0]?.id;
   let heading,description,tone='caution';
   if(snapshot.mode==='fixture'){heading='Sample data';description='Illustrative accounts · no organizer connection';}
   else if(snapshot.mode==='discovery'){heading='Discovery snapshot';description='Private manual notes · not live MCP';}
-  else if(snapshot.syncStatus==='stale'){heading='Stale organizer cache';description='Showing the last available snapshot';}
+  else if(snapshot.syncStatus==='stale'){heading='Saved snapshot · refresh needed';description='Account facts remain available · signals last checked '+sourceTime(snapshot.signalCheckedAt);}
   else if(snapshot.syncStatus==='awaiting-paperwork'){heading='Contract evidence syncing';description='Organizer snapshot · verification in progress';}
   else if(snapshot.syncStatus==='awaiting-signals'){heading='Awaiting signal check';description='Organizer snapshot · first check pending';}
-  else{heading='Live organizer snapshot';description='Signals checked '+sourceTime(snapshot.signalCheckedAt);tone='connected';}
+  else{heading='Organizer snapshot available';description='Signals checked '+sourceTime(snapshot.signalCheckedAt);tone='connected';}
   mode.textContent=heading;detail.textContent=description;$('status').dataset.state=tone;
   if(changed||!started)render();started=true;
  }catch(e){
   mode.textContent=started?'Snapshot refresh paused':'Awaiting organizer data';
   detail.textContent=started?'Showing the last available snapshot · '+e.message:'No verified account snapshot is available · '+e.message;
   $('status').dataset.state='caution';
+  if(started){snapshot={...snapshot,syncStatus:'stale'};render();}
   if(!started)connectionState('The next move starts with evidence.','The workspace is ready. Organizer data is not available yet, so no account values, recommendations, or live signals are shown. Refresh to check again.');
  }finally{refresh.disabled=false;refresh.textContent='Refresh data';$('workspace').setAttribute('aria-busy','false');}
 }
