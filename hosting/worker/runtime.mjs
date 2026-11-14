@@ -34,9 +34,16 @@ async function cache(db){
  return Object.fromEntries(rows.results.filter(x=>READ_TYPES.has(x.name)).map(x=>[x.name,{at:x.retrieved_at,value:JSON.parse(x.value)}]));
 }
 function privatePlans(env){
- if(!env.AQ_PRIVATE_PLAN)return {};
- const parsed=JSON.parse(env.AQ_PRIVATE_PLAN);
+ const parsed=env.AQ_PRIVATE_PLAN?JSON.parse(env.AQ_PRIVATE_PLAN):{};
  if(!parsed||Array.isArray(parsed)||typeof parsed!=='object')throw Error('Invalid plan');
+ for(const id of ['A','B']){
+  const input=env['AQ_PLAN_'+id];
+  if(!input)continue;
+  const plan=JSON.parse(input);
+  if(!plan?.accountName||typeof plan.accountName!=='string')throw Error('Invalid account plan');
+  const {accountName,currency,signalPolicy,deals,recommendation,gaps}=plan;
+  parsed[id]={accountName,currency,signalPolicy,deals,recommendation,gaps};
+ }
  return parsed;
 }
 async function upstream(env,key,args={},upstreamFetch=(...args)=>globalThis.fetch(...args),now=Date.now()){
@@ -44,7 +51,7 @@ async function upstream(env,key,args={},upstreamFetch=(...args)=>globalThis.fetc
  if(!env.DB||!env.AQ_TOKEN||(!write&&!READ_TYPES.has(key)))throw Error('Organizer not configured');
  if(!await reserve(env.DB,now))return {state:'cooldown'};
  const [name,account]=key.split(':');
- const response=await upstreamFetch(ORGANIZER_MCP,{method:'POST',redirect:'error',headers:{
+ const response=await upstreamFetch(ORGANIZER_MCP,{method:'POST',redirect:'manual',headers:{
   'Authorization':'Bearer '+env.AQ_TOKEN,'Accept':'application/json, text/event-stream','Content-Type':'application/json'
  },body:JSON.stringify({jsonrpc:'2.0',id:now,method:'tools/call',params:{name,arguments:account?{account}:args}}),signal:AbortSignal.timeout(10000)});
  if(!response.ok)throw Error('Organizer HTTP '+response.status);

@@ -13,6 +13,8 @@ Copy `.openai/hosting.example.json` to `.openai/hosting.json` and set your own h
 - `AQ_ADMIN_KEY`: optional independent runtime secret for intentional note writes and trusted scheduled refresh. Never reuse the organizer token for this.
 - `AQ_PRIVATE_PLAN`: optional private JSON configuration for known event-specific strategies. Install only via runtime configuration when authorized; no source inclusion. The generic fallback still works without it.
 
+- `AQ_PLAN_A` / `AQ_PLAN_B`: optional server-only account plans, applied only when their exact account name matches.
+
 ## Live limits and boundaries
 
 While the dashboard is open, it polls the cached endpoint. In the Worker, `waitUntil` attempts an organizer refresh when needed. All users, refreshes and note writes share a D1 atomic 61-second reservation, committed before the network call. Upstream failures never release that slot early. On first deployment, the board may take several minutes to fetch accounts, signals, and each paperwork set. The browser marks missing signal checks pending and old checks stale.

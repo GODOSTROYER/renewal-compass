@@ -71,3 +71,17 @@ test('redaction preserves source IDs and removes raw documents, email and token-
  const out=JSON.stringify(result);
  for(const s of ['PRIVATE','user@example.com','xxxxxxxxxxxx'])assert(!out.includes(s));
 });
+
+test('a scoped hosted plan applies only to the matching account name',async()=>{
+ const db=fakeDb(),time=Date.now(),name='get_my_accounts';
+ db.cache.set(name,{name,retrieved_at:new Date(time).toISOString(),value:JSON.stringify(fixture)});
+ const app=workerWith({now:()=>time});
+ const plan={accountName:'Synthetic',recommendation:{decision:'Protect verified account',actions:[]},notes:[{text:'must be ignored'}]};
+ const read=async config=>(await (await app.fetch(request('/api/account-snapshot'),config,ctx())).json()).accounts[0];
+ const env={DB:db,AQ_REVIEW_MODE:'normalized'};
+ const a=await read({...env,AQ_PLAN_A:JSON.stringify(plan)});
+ assert.equal(a.recommendation.decision,'Protect verified account');
+ assert(!JSON.stringify(a).includes('must be ignored'));
+ const other=await read({...env,AQ_PLAN_A:JSON.stringify({...plan,accountName:'Another account'})});
+ assert.notEqual(other.recommendation.decision,'Protect verified account');
+});
