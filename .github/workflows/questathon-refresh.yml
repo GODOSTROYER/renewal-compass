@@ -1,0 +1,44 @@
+name: Judge window data check
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Best effort during the announced Questathon judging window, UTC.
+    - cron: '3-58/5 9-22 14 11 *'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: renewal-compass-judge-refresh
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    if: github.repository == 'GODOSTROYER/renewal-compass'
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Check public snapshot without a viewer
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$(date -u +%F)" != 2026-11-14 ]] || (( $(date -u +%s) >= $(date -u -d '2026-11-14T22:17:00Z' +%s) )); then
+            echo 'The judging refresh window has ended. No request made.'
+            exit 0
+          fi
+          result="$(mktemp)"
+          trap 'rm -f "$result"' EXIT
+          curl --fail --silent --show-error --max-time 35 \
+            --proto '=https' --header 'Accept: application/json' \
+            --output "$result" \
+            'https://renewal-compass-crm.tarun-aditya.chatgpt.site/api/account-snapshot'
+          jq -e '.mode == "live" and (.accounts | type == "array" and length == 2) and (.signalCheckedAt | type == "string")' "$result" >/dev/null
+          checked="$(jq -r '.signalCheckedAt' "$result")"
+          checked_epoch="$(date -u -d "$checked" +%s)"
+          age="$(( $(date -u +%s) - checked_epoch ))"
+          printf 'Last successful organizer check: %s (%ss old)\n' "$checked" "$age"
+          if (( age < 0 || age > 600 )); then
+            echo 'Organizer freshness could not be verified within 10 minutes.'
+            exit 1
+          fi
