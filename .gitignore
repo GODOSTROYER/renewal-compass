@@ -1,0 +1,4 @@
+discovery.local.mjs
+.private-state/
+.env
+plans.local.mjs
