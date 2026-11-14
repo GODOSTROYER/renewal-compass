@@ -23,7 +23,7 @@ Open `http://127.0.0.1:8314` in sample mode. To verify the exact production adap
 
 ```sh
 node scripts/build.mjs
-node --test worker/runtime.test.mjs scripts/check-public.test.mjs
+node --test worker/runtime.test.mjs scripts/check-public.test.mjs scripts/compare-public.test.mjs
 node --test worker/live-loop.test.mjs
 ```
 
@@ -55,6 +55,12 @@ Risk cards show the next move only when the account’s evidence uniquely suppor
 A copied action preserves missing, pending, or stale evidence warnings, signal check time, and selected-account paperwork time. The next owner should recheck before committing. The temporary independent judging check and GitHub workflow are bounded to the judging window. After the window, use **Refresh data** or open the dashboard to request the next eligible check; there is no native always-on scheduler.
 
 See the [operator guide](hosting/docs/OPERATIONS.md) for scope, refresh failures, and release identity verification.
+
+### Compare evidence without guessing
+
+In the CRM, **Why this move** explains the actual ranking and compares the first action and its sources with the first time you viewed that account in this tab. It is not a shared handoff log or organizer event history. Reloading starts a new baseline.
+
+For a repeatable review, run `node scripts/compare-public.mjs before.json after.json` from `hosting/` using two saved observations with successful checks from the same release. [How to read the comparison](hosting/docs/OFFLINE-COMPARISON.md). The comparator separates roster and paperwork changes from unchanged, edited, first-observed or reappearing signal IDs; it never certifies organizer publication.
 
 ### Newly assigned accounts
 

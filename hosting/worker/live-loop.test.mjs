@@ -31,7 +31,7 @@ function memoryD1(){
  };}};
 }
 
-test('SYNTHETIC built Worker: empty → sourced ranked change → duplicate → failure retains last good event',async()=>{
+test('SYNTHETIC built Worker: empty → sourced ranked change → replay → failure → absence → reappearance',async()=>{
  const db=memoryD1();let clock=Date.parse('2026-01-01T00:00:00Z'),step=0;
  const accountName='SYNTHETIC ONLY Acme Sandbox';
  const signal={id:'synthetic-live-loop-001',account:'A',title:'SYNTHETIC ONLY pilot interruption',summary:'Invented fixture: pilot paused pending owner review.'};
@@ -48,7 +48,7 @@ test('SYNTHETIC built Worker: empty → sourced ranked change → duplicate → 
   assert.equal(url,'https://questathon.aihackerscollective.com/api/public/mcp');
   assert.equal(rpc.params.name,'get_signals','Only injected read-only signal transport may run');
   assert.equal(init.method,'POST');
-  const response=step===0?{signals:[]}:step===1?{signals:[signal]}:step===2?{signals:[signal,structuredClone(signal)]}:null;
+  const response=[{signals:[]},{signals:[signal]},{signals:[signal,structuredClone(signal)]},null,{signals:[]},{signals:[signal]}][step];
   return response?Response.json({jsonrpc:'2.0',id:rpc.id,result:{structuredContent:response}}):new Response('SYNTHETIC unavailable',{status:503});
  }});
  const env={DB:db,AQ_TOKEN:'synthetic-test-placeholder-not-a-secret',AQ_REVIEW_MODE:'normalized',AQ_PLAN_A:JSON.stringify({accountName,signalPolicy:{[signal.id]:triggered},recommendation:{decision:'Synthetic provisional plan',actions:[baseline]}})};
@@ -89,5 +89,27 @@ test('SYNTHETIC built Worker: empty → sourced ranked change → duplicate → 
  assert.equal(failed.signalCheckedAt,lastGoodAt,'Failure must not masquerade as a successful fresh check');
  assert.equal(failed.syncHealth.lastSignalFailureAt,new Date(clock).toISOString());
  assert.deepEqual(failed.accounts[0],replayed,'Failed response preserves exact sourced action and last good observation');
- assert.deepEqual(calls,['get_signals','get_signals','get_signals','get_signals']);
+ // Simulate a new Worker process with the same durable store, no in-memory history.
+ const resumed=workerWith({now:()=>clock,upstreamFetch:async(url,init)=>{
+  const rpc=JSON.parse(init.body);calls.push(rpc.params.name);
+  assert.equal(rpc.params.name,'get_signals');
+  return Response.json({id:rpc.id,result:{signals:step===4?[]:[signal]}});
+ }});
+ const readResumed=()=>resumed.fetch(new Request('https://synthetic.invalid/api/account-snapshot'),env,{waitUntil(){}}).then(r=>r.json());
+ step=4;clock+=181000;
+ const absent=await readResumed(), aa=absent.accounts[0];
+ assert.equal(absent.syncHealth.signalState,'fresh-empty');
+ assert.deepEqual(aa.signals,[]);
+ assert.deepEqual(prioritizedActions(aa),[sourcedBaseline],'Signal action may leave the current brief, but the past observation remains auditable');
+ assert.equal(aa.signalTrail.absent[0].id,signal.id);
+ assert.equal(aa.signalTrail.absent[0].state,'not-in-latest-feed');
+ assert.match(aa.signalTrail.basis,/not organizer publication or resolution/);
+ step=5;clock+=181000;
+ const restored=await readResumed(), ar=restored.accounts[0], obs=ar.signals[0].observation;
+ assert.equal(obs.state,'reappeared');
+ assert.equal(obs.firstObservedAt,a.signals[0].observation.firstObservedAt);
+ assert.equal(obs.lastReappearedAt,restored.signalCheckedAt);
+ assert.deepEqual(prioritizedActions(ar),prioritizedActions(a));
+ assert.equal(ar.signalTrail.absent.length,0);
+ assert.deepEqual(calls,Array(6).fill('get_signals'));
 });

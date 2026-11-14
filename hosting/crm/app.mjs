@@ -13,7 +13,8 @@ function metadata(label,text){return add(el('p',null,'metadata'),el('span',label
 function money(v,c){if(!Number.isFinite(v))return 'Value unknown';try{return new Intl.NumberFormat('en',{style:'currency',currency:c,maximumFractionDigits:0}).format(v)}catch{return String(v)}}
 const cfg=globalThis.QUEST_CRM_CONFIG??{};
 const adapter=cfg.normalizedEndpoint?endpointAdapter(cfg.normalizedEndpoint):new URLSearchParams(location.search).get('mode')==='discovery'?discoveryAdapter:fixtureAdapter;
-let current,snapshot,started=false;
+let current,snapshot,started=false,observedSnapshotSequence=0;
+const accountViewBaselines=new Map();
 const blockId=s=>'review-'+s;
 function jump(label,id){
  const a=add(el('a',null,'jump'),icon(({deals:'people',actions:'actions',risks:'risk',gaps:'gap',evidence:'evidence'})[id],'route-icon'),el('span',label));a.dataset.section=id;a.setAttribute('aria-label',label);a.href='#'+blockId(id);const arrow=document.createElementNS('http://www.w3.org/2000/svg','svg');arrow.setAttribute('viewBox','0 0 16 16');arrow.setAttribute('class','jump-arrow');arrow.setAttribute('aria-hidden','true');const path=document.createElementNS('http://www.w3.org/2000/svg','path');path.setAttribute('d','M3 13 13 3M4 3h9v9');arrow.append(path);a.append(arrow);return a;
@@ -86,6 +87,40 @@ function handoffTrust(account){
  if(!snapshotTimestamp(snapshot?.sourceAt)||!snapshotTimestamp(snapshot?.signalCheckedAt))checks.push('Source or signal-check timestamps are unknown.');
  return {warning:checks.length>0,message:checks.length?checks.join(' '):'Snapshot reports checks ready. This does not independently verify the decision, customer approval or resolution of risks.'};
 }
+function comparable(value,key){
+ if(Array.isArray(value))return key==='evidenceIds'?[...new Set(value)].sort():value.map(item=>comparable(item));
+ return value&&typeof value==='object'?Object.fromEntries(Object.keys(value).sort().map(k=>[k,comparable(value[k],k)])):value;
+}
+function actionViewRecord(account){
+ const action=prioritizedActions(account)[0],ids=action?validSources(account,action.evidenceIds).sort():[];
+ const fields=['claim','confidence','source','title','sourceId'];
+ return {accountName:account.name,action:action?comparable(action):null,timing:action?actionTiming(account,action).text:null,ids,sources:Object.fromEntries(ids.map(id=>{const source=(account.evidence??[]).find(x=>x.id===id);return [id,Object.fromEntries(fields.map(key=>[key,source?.[key]??null]))]})),sequence:observedSnapshotSequence,viewedAt:new Date().toISOString(),sourceAt:snapshot?.sourceAt,signalCheckedAt:snapshot?.signalCheckedAt};
+}
+function actionObservation(account){
+ const baseline=accountViewBaselines.get(account.id),now=actionViewRecord(account),action=now.action;
+ if(!baseline||(!baseline.action&&!action))return null;
+ const prior=baseline.action,identityChanged=prior?.action!==action?.action||prior?.deal!==action?.deal;
+ const detailsChanged=!identityChanged&&(JSON.stringify(prior)!==JSON.stringify(action)||baseline.timing!==now.timing);
+ const added=now.ids.filter(id=>!baseline.ids.includes(id)),removed=baseline.ids.filter(id=>!now.ids.includes(id));
+ const changed=now.ids.filter(id=>baseline.ids.includes(id)).map(id=>({id,fields:Object.keys(now.sources[id]).filter(key=>JSON.stringify(now.sources[id][key])!==JSON.stringify(baseline.sources[id][key]))})).filter(x=>x.fields.length);
+ const refreshed=now.sequence>baseline.sequence,hasChanges=identityChanged||detailsChanged||added.length||removed.length||changed.length;
+ const label=!action?'No top move currently recorded':!prior?'Top move became available in this tab':identityChanged?'Top move changed in this tab':hasChanges?'Plan or linked evidence changed in this tab':refreshed?'Same top move and linked evidence observed':'Local baseline set';
+ const panel=add(el('details',null,'action-observation'),el('summary','Why this move · '+label));panel.dataset.changeState=!action?'removed':!prior?'became-available':hasChanges?'changed':refreshed?'unchanged':'baseline';panel.open=baseline.detailsOpen===true;panel.addEventListener('toggle',()=>{if(panel.isConnected)baseline.detailsOpen=panel.open;});
+ if(action)panel.append(el('p','Ordering: earliest supplied scenario move, then highest supplied CRM urgency; ties keep supplied order. These fields do not verify a customer deadline or decision authority.','observation-rule'));
+ if(Number.isInteger(action?.move))panel.append(metadata('Scenario move',action.move));if(Number.isFinite(action?.urgency))panel.append(metadata('CRM urgency',action.urgency));if(action?.origin)panel.append(metadata('Recorded basis',action.origin));
+ if(!action)panel.append(el('p','No top move is currently recorded. Its disappearance is not proof that the prior action or risk is resolved.','observation-boundary'));
+ panel.append(el('p','Compared with this account’s first view in this tab. Resets on reload. This is not organizer event history or proof of when an event arrived.','observation-boundary'),metadata('First viewed locally',sourceTime(baseline.viewedAt)),metadata('Baseline source time',sourceTime(baseline.sourceAt)),metadata('Baseline signal check',sourceTime(baseline.signalCheckedAt)));
+ if(snapshot?.syncStatus==='stale')panel.append(el('p','Refresh is not confirmed. This comparison uses the saved content shown here.','observation-boundary'));
+ if(identityChanged&&prior)panel.append(metadata('Previously shown move',prior.action??'No action text recorded'));
+ if(detailsChanged)panel.append(el('p','Top-action details or displayed timing differ from the first view. Recheck the owner, completion test and timing before using the handoff.','observation-delta'));
+ if(added.length)panel.append(add(el('div',null,'observation-delta'),el('span','Newly linked in this view: '),links(added)));
+ if(removed.length){const line=add(el('div',null,'observation-delta'),el('span','No longer linked to the top move in this view: '));for(const id of removed){if(validSources(account,[id]).length)line.append(links([id]));else line.append(el('span',id+' (not in current ledger)','observation-source-id'));}panel.append(line);}
+ for(const item of changed)panel.append(add(el('div',null,'observation-delta'),el('span','Source details differ ('+item.fields.join(', ')+'): '),links([item.id])));
+ if(!hasChanges)panel.append(el('p',refreshed?'No top-action or linked-source difference observed against the local baseline. Timestamp changes alone are not a new signal.':'This first view is the comparison baseline; earlier changes are unknown.','observation-delta'));
+ const unresolved=(action?.evidenceIds??[]).filter(id=>!now.ids.includes(id));if(unresolved.length)panel.append(el('p',unresolved.length+' action source ID'+(unresolved.length===1?' is':'s are')+' not in this account’s current ledger; that content cannot be compared.','observation-boundary'));
+ if(now.ids.length)panel.append(add(el('div',null,'observation-delta'),el('span','Current exact action sources: '),links(now.ids)));
+ return panel;
+}
 function handoffText(account,action,constraintText){
  const timing=actionTiming(account,action),sourceIds=validSources(account,action.evidenceIds),checkpoint=action.proposedCheckpoint;
  // Handoffs contain planned work, never evidence excerpts, email addresses or phone numbers.
@@ -133,6 +168,7 @@ function discoveryProof(account){
  const constraintText=explicitlyScoped?constraint.text:typeof action.success==='string'&&action.success.trim()?'Advancing '+(action.deal??'this action')+' without this completion evidence: '+action.success:null;
  if(constraintText){const guardrail=add(el('div',null,'proof-constraint'),add(el('div'),el('span','What this evidence prevents','proof-label'),el('p','CRM decision constraint · not an observed attempted move','proof-source-state')),add(el('div',null,'constraint-content'),el('p',constraintText,'constraint-text'),links(explicitlyScoped?constraintIds:evidence.map(x=>x.id))));guardrail.dataset.basis=explicitlyScoped?'scoped-constraint':'recorded-completion-test';proof.append(guardrail);}
  headingRow.append(handoffControl(account,action,constraintText));
+ const observation=actionObservation(account);if(observation)proof.append(observation);
  return proof;
 }
 function observationDetails(account){
@@ -162,6 +198,7 @@ function render(){
  for(const a of snapshot.accounts){let b=add(el('button'),icon('building','account-icon'),el('span',a.name,'account-name'),el('span',Array.isArray(a.deals)?a.deals.length+(a.deals.length===1?' deal':' deals'):'Deals unknown','account-count'));b.dataset.accountId=a.id;b.setAttribute('aria-pressed',a.id===current);b.addEventListener('click',()=>{current=a.id;render();[...$('accounts').children].find(n=>n.dataset.accountId===a.id)?.focus()});$('accounts').append(b)}
  const a=snapshot.accounts.find(x=>x.id===current),out=$('workspace');out.replaceChildren();
  if(!a){connectionState('No accounts in this snapshot.','The connection returned no account records. No recommendation has been generated.');return}
+ if(!accountViewBaselines.has(a.id)||accountViewBaselines.get(a.id).accountName!==a.name)accountViewBaselines.set(a.id,actionViewRecord(a));
  out.append(add(el('div',null,'account-heading'),add(el('div',null,'title'),el('h2',a.name),el('span',Number.isInteger(a.move)?'Account move '+a.move:'Move unknown','badge')),el('p',a.context??'','account-context')));
  const overview=card('Account brief',true);overview.classList.add('account-brief');
  const metrics=el('dl',null,'brief');
@@ -181,7 +218,7 @@ function render(){
  routes.append(jump('Buying group','deals'),jump('Top 3 actions','actions'),jump('Timed risks','risks'),jump('Missing facts','gaps'),jump('Exact sources','evidence'));
  overview.append(metrics);out.append(overview);const proof=discoveryProof(a);if(proof)out.append(proof);if(!prioritizedActions(a).length)out.append(add(el('aside',null,'account-intake'),el('strong','No decision-ready next move yet'),el('p',(a.evidence?.length?'Sources are available, but no ranked action is recorded.':'Account evidence and ranked actions are not yet available in this snapshot.')+' Verify the account facts before committing; no recommendation has been inferred.')));out.append(freshnessPanel(a),routes);
  const r=a.recommendation, grid=el('div',null,'grid'), plan=card('Top actions',true);plan.id=blockId('actions');
- if(!proof&&prioritizedActions(a)[0])plan.prepend(handoffControl(a,prioritizedActions(a)[0],null));
+ if(!proof){if(prioritizedActions(a)[0])plan.prepend(handoffControl(a,prioritizedActions(a)[0],null));const observation=actionObservation(a);if(observation)plan.append(observation);}
  if(r){plan.append(add(el('div',null,'decision-context'),metadata('Confidence',r.confidence),el('p',r.reason??'','decision-reason')),metadata('Biggest unknown',r.unknown),links(r.evidence));list(plan,prioritizedActions(a).slice(0,3),(x,i)=>actionCard(a,x,i), 'No actions recorded.')}
  else empty(plan,'Make no recommendation until there is evidence.');
  const pendingTiming=prioritizedActions(a).slice(0,3).filter(x=>!actionTiming(a,x).verified);
@@ -266,7 +303,7 @@ async function load(){
  const mode=$('status').querySelector('.status-mode'),detail=$('status').querySelector('.status-detail');
  try{
   const next=await adapter.load(),changed=JSON.stringify(snapshot)!==JSON.stringify(next);
-  snapshot=next;current=snapshot.accounts.some(x=>x.id===current)?current:snapshot.accounts[0]?.id;
+  snapshot=next;observedSnapshotSequence++;current=snapshot.accounts.some(x=>x.id===current)?current:snapshot.accounts[0]?.id;
   let heading,description,tone='caution';
   if(snapshot.mode==='fixture'){heading='Sample data';description='Illustrative accounts · no organizer connection';}
   else if(snapshot.mode==='discovery'){heading='Discovery snapshot';description='Private manual notes · not live MCP';}
@@ -275,7 +312,15 @@ async function load(){
   else if(snapshot.syncStatus==='awaiting-signals'){heading='Awaiting signal check';description='Organizer snapshot · first check pending';}
   else{heading='Organizer snapshot available';description='Signals checked '+sourceTime(snapshot.signalCheckedAt);tone='connected';}
   mode.textContent=heading;detail.textContent=description;$('status').dataset.state=tone;
-  if(changed||!started)render();started=true;
+  if(changed||!started)render();
+  else{
+   // An identical replay updates only the local comparison; preserve handoff previews and focus.
+   const old=$('workspace').querySelector('.action-observation'),account=snapshot.accounts.find(x=>x.id===current),next=account&&actionObservation(account);
+   if(old&&next&&(old.dataset.changeState!==next.dataset.changeState||old.textContent!==next.textContent)){
+    const focused=old.contains(document.activeElement)?document.activeElement:null,href=focused?.getAttribute('href');old.replaceWith(next);
+    if(focused)(href?[...next.querySelectorAll('a')].find(x=>x.getAttribute('href')===href):next.querySelector('summary'))?.focus({preventScroll:true});
+   }
+  }started=true;
  }catch(e){
   mode.textContent=started?'Snapshot refresh paused':'Awaiting organizer data';
   detail.textContent=started?'Showing the last available snapshot · '+e.message:'No verified account snapshot is available · '+e.message;

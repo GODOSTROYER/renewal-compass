@@ -5,7 +5,7 @@
 1. Open https://renewal-compass-crm.tarun-aditya.chatgpt.site. Check whether the board identifies sample data or organizer-backed data before interpreting counts.
 2. Inspect freshness and pending/stale signals. A zero count is not evidence of no risk if the feed is pending or stale.
 3. Open an account and follow the recommendation, supporting source IDs, and paperwork gaps. Recommendations are decision support, not verified customer outcomes.
-4. Compare an account with the board priorities. Check that incomplete evidence is visible rather than represented as certainty.
+4. Check that incomplete evidence is visible rather than represented as certainty. For a clean first review, do not use a stale or pending feed to infer that no risks changed.
 5. Do not attempt a note write during a read-only evaluation. Notes are operator-controlled; displayed note status is not proof of an organizer write.
 
 The URL is a deployed snapshot, not proof that the latest Git revision is deployed. Record the evaluated commit and deployment revision separately. Never include credentials, raw organizer responses, private plans, or customer snippets in a review screenshot or repository issue.
@@ -28,9 +28,9 @@ To build the deployment artifact, run `node scripts/build.mjs` from `hosting/`. 
 
 ## What the tests prove, and do not prove
 
-Run `node --test worker/live-loop.test.mjs` separately, never concurrently with other build-dependent tests, for an isolated synthetic organizer empty → new event → sourced first move → deduplication → stale-cache recovery check against the assembled Worker.
+Run `node --test worker/live-loop.test.mjs` separately, never concurrently with other build-dependent tests, for an isolated synthetic organizer empty → synthetic event → sourced first move → replay → failed refresh → feed absence → reappearance check against the assembled Worker.
 
-`worker/runtime.test.mjs` exercises the runtime with mocked upstream responses and database behavior. Passing tests are useful regression evidence, not a live organizer integration certification. Inspect the test output for the exact covered cases and failures. A static preview does not exercise the Worker security boundary.
+`worker/runtime.test.mjs` exercises the runtime with mocked upstream responses and database behavior. Passing tests are useful regression evidence, not a live organizer integration certification. The built-Worker test includes a process restart with durable state: a missing event is retained in the observation trail without marking the risk resolved, and a reappearance retains the original locally observed time. Inspect the test output for the exact covered cases and failures. A static preview does not exercise the Worker security boundary.
 
 Live verification needs an authorized runtime secret, a D1 binding and applied schema, an intentional review access mode, and the deployed revision. Configure these through the hosting service, never in browser code or committed files. Organizer rate limits and shared credential use remain operational constraints. Do not run ad hoc organizer calls concurrently with the deployed Worker.
 
@@ -50,6 +50,12 @@ From `hosting/`, run `node scripts/check-public.mjs --require-action-sources`. T
 4. A previously recorded organizer ID may be missing or reappear later. The observation trail records what this deployment saw. It does not establish when the organizer first issued an event, whether the problem was resolved, or whether a recommended action happened.
 
 For a local review of a saved public response, build the Worker and run `node scripts/verify-release.mjs /path/to/snapshot.json`. It verifies the exact compiled fingerprint and reviewer boundaries without any network access. It is a point-in-time comparison, not live-feed certification.
+
+## Compare observed states
+
+On the CRM, expand **Why this move** near the first action to see how the current first move compares with the first time you viewed that account in this tab. The panel explains the ordering rule and reports a change of plan, linked evidence, or prior move disappearance without assuming a new organizer event or resolution. Opening a new tab or reloading starts a new baseline.
+
+For a repeatable offline check, run `node scripts/compare-public.mjs before.json after.json` on two saved public read models. Both must come from the same identified release and have successful checks in forward order. It reports roster, paperwork, signal identity, and ranked-action changes separately without connecting to the organizer. For interpretation and test commands, see [offline comparison](OFFLINE-COMPARISON.md).
 
 ## Read a verification failure correctly
 
