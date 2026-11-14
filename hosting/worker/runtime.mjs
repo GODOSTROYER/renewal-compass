@@ -39,14 +39,14 @@ function privatePlans(env){
  if(!parsed||Array.isArray(parsed)||typeof parsed!=='object')throw Error('Invalid plan');
  return parsed;
 }
-async function upstream(env,key,args={},upstreamFetch=fetch,now=Date.now()){
+async function upstream(env,key,args={},upstreamFetch=(...args)=>globalThis.fetch(...args),now=Date.now()){
  const write=key==='write_note';
  if(!env.DB||!env.AQ_TOKEN||(!write&&!READ_TYPES.has(key)))throw Error('Organizer not configured');
  if(!await reserve(env.DB,now))return {state:'cooldown'};
  const [name,account]=key.split(':');
  const response=await upstreamFetch(ORGANIZER_MCP,{method:'POST',redirect:'error',headers:{
   'Authorization':'Bearer '+env.AQ_TOKEN,'Accept':'application/json, text/event-stream','Content-Type':'application/json'
- },body:JSON.stringify({jsonrpc:'2.0',id:crypto.randomUUID(),method:'tools/call',params:{name,arguments:account?{account}:args}}),signal:AbortSignal.timeout(10000)});
+ },body:JSON.stringify({jsonrpc:'2.0',id:now,method:'tools/call',params:{name,arguments:account?{account}:args}}),signal:AbortSignal.timeout(10000)});
  if(!response.ok)throw Error('Organizer HTTP '+response.status);
  const envelope=decode(await response.text(),response.headers.get('Content-Type')??'');
  if(envelope.error||envelope.result?.isError||envelope.result===undefined)throw Error('Organizer rejected request');
@@ -90,7 +90,7 @@ async function getLive(req,env,ctx,upstreamFetch,now){
  if(!env.DB)return api({error:'Durable organizer cache is not configured'},503);
  try{
   const results=await cache(env.DB);
-  if(env.AQ_TOKEN)ctx.waitUntil(refresh(env,results,upstreamFetch,now).catch(err=>{const safe=String(err?.message??''); console.warn('Organizer refresh failed',/^Organizer HTTP [0-9]{3}$/.test(safe)?safe:err?.name==='TimeoutError'?'timeout':safe.startsWith('D1')?'storage error':safe==='Organizer rejected request'?'tool rejected':'connection or response error');}));
+  if(env.AQ_TOKEN)ctx.waitUntil(refresh(env,results,upstreamFetch,now).catch(err=>{const safe=String(err?.message??''); console.warn('Organizer refresh failed',/^Organizer HTTP [0-9]{3}$/.test(safe)?safe:err?.name==='TimeoutError'?'timeout':safe.startsWith('D1')?'storage error':safe==='Organizer rejected request'?'tool rejected':/illegal invocation/i.test(safe)?'host fetch binding':/network connection lost/i.test(safe)?'upstream network connection lost':/unexpected token|json/i.test(safe)?'unexpected upstream response format':/stream|response unavailable/i.test(safe)?'upstream response stream failed':'connection or response error');}));
   if(!results.get_my_accounts)return api({error:env.AQ_TOKEN?'Waiting for the first organizer data pull':'Organizer connection has not been configured',status:'pending'},503);
   results.confirmed_notes=await confirmedNotes(env.DB);
   const normalized=normalizeOrganizer(results,privatePlans(env));
@@ -99,7 +99,7 @@ async function getLive(req,env,ctx,upstreamFetch,now){
   return api(reviewerView({...normalized,syncStatus:status}));
  }catch{return api({error:'Organizer cache temporarily unavailable',status:'pending'},503);}
 }
-export function workerWith({upstreamFetch=fetch,now=Date.now}={}){
+export function workerWith({upstreamFetch=(...args)=>globalThis.fetch(...args),now=Date.now}={}){
  return {async fetch(req,env,ctx){
   const url=new URL(req.url), path=url.pathname;
   if(req.method==='GET'&&path==='/api/account-snapshot')return getLive(req,env,ctx,upstreamFetch,now());
