@@ -72,7 +72,10 @@ export function normalizeOrganizer(results,plans={}){
   const planOpps=list(a.opportunities).map(d=>({...d,...(privatePlan.deals?.[d.id]??{})}));
   const fallback=buildFallback({opportunities:planOpps,evidence,stakeholders:people,signals:relevant.filter(x=>!privatePlan.signalPolicy?.[x.id]),contract:bookValue,accountRef,accountMove});
   const localEvidenceIds=new Set(evidence.map(x=>x.id));
-  const sourcedAction=x=>({...x,evidenceIds:[...new Set(list(x.evidenceIds).filter(id=>typeof id==='string'&&localEvidenceIds.has(id)))]});
+  const localIds=ids=>[...new Set(list(ids).filter(id=>typeof id==='string'&&localEvidenceIds.has(id)))];
+  const sourcedAction=x=>({...x,evidenceIds:localIds(x.evidenceIds),...(x.proposedCheckpoint&&{
+   proposedCheckpoint:{...x.proposedCheckpoint,evidenceIds:localIds(x.proposedCheckpoint.evidenceIds)}
+  })});
   const recommendation=privatePlan.recommendation?{
    ...privatePlan.recommendation,actions:[...rankSignals(relevant,privatePlan.signalPolicy),...fallback.signalActions,...list(privatePlan.recommendation.actions)].filter(x=>x&&typeof x==='object').map(sourcedAction)
   }:fallback.recommendation;

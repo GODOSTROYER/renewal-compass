@@ -87,6 +87,16 @@ async function cache(db){
  }
  return valid;
 }
+function isoCalendarDate(value){
+ return typeof value==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(value)&&Number.isFinite(Date.parse(value))
+  &&new Date(value).toISOString().slice(0,10)===value;
+}
+function suppliedCalendar(action){
+ if(action.timing?.kind==='sourced-date'||isoCalendarDate(action.timing?.date))return true;
+ const raw=[action.dueDate,action.timing?.text].filter(x=>typeof x==='string').join(' ');
+ return (raw.match(/\b\d{4}-\d{2}-\d{2}\b/g)??[]).some(isoCalendarDate)
+  ||/\b(?:\d{1,2}\s+(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)|(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+\d{1,2})\b/i.test(raw);
+}
 function overlayActionEvidence(plans,raw){
  if(!raw)return plans;
  let addon;
@@ -99,9 +109,16 @@ function overlayActionEvidence(plans,raw){
    ||scoped.accountName!==plan?.accountName||!record(scoped.actions)||!Array.isArray(actions))continue;
   plans[id]={...plan,recommendation:{...plan.recommendation,actions:actions.map(action=>{
    if(typeof action?.action!=='string'||!Object.hasOwn(scoped.actions,action.action))return action;
-   const extra=scoped.actions[action.action];
-   if(!Array.isArray(extra)||!extra.length||!extra.every(id=>typeof id==='string'&&id.trim()===id&&id.length>0))return action;
-   return {...action,evidenceIds:[...new Set([...(Array.isArray(action.evidenceIds)?action.evidenceIds:[]),...extra])]};
+   const extra=scoped.actions[action.action], incoming=Array.isArray(extra)?extra:record(extra)?extra.evidenceIds:undefined;
+   const idList=x=>Array.isArray(x)&&x.every(id=>typeof id==='string'&&id.trim()===id&&id.length>0);
+   if(incoming!==undefined&&!idList(incoming))return action;
+   const out=incoming?.length?{...action,evidenceIds:[...new Set([...(Array.isArray(action.evidenceIds)?action.evidenceIds:[]),...incoming])]}:action;
+   const checkpoint=record(extra)?extra.proposedCheckpoint:undefined;
+   const text=x=>typeof x==='string'&&x.trim().length>0&&x.length<=400;
+   if(!record(checkpoint)||action.proposedCheckpoint||suppliedCalendar(action)||!isoCalendarDate(checkpoint.date)
+    ||!text(checkpoint.purpose)||!text(checkpoint.basis)||(checkpoint.evidenceIds!==undefined&&!idList(checkpoint.evidenceIds)))return out;
+   return {...out,proposedCheckpoint:{date:checkpoint.date,purpose:checkpoint.purpose.trim(),basis:checkpoint.basis.trim(),
+    evidenceIds:checkpoint.evidenceIds??incoming??[]}};
   })}};
  }
  return plans;
@@ -117,7 +134,7 @@ function privatePlans(env){
   const {accountName,currency,signalPolicy,deals,recommendation,gaps}=plan;
   parsed[id]={accountName,currency,signalPolicy,deals,recommendation,gaps};
  }
- return overlayActionEvidence(parsed,env.AQ_ACTION_EVIDENCE);
+ return overlayActionEvidence(overlayActionEvidence(parsed,env.AQ_ACTION_EVIDENCE),env.AQ_ACTION_CHECKPOINTS);
 }
 async function upstream(env,key,args={},upstreamFetch=(...args)=>globalThis.fetch(...args),now=Date.now()){
  const write=key==='write_note';

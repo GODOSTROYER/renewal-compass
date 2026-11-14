@@ -28,6 +28,8 @@ To build the deployment artifact, run `node scripts/build.mjs` from `hosting/`. 
 
 ## What the tests prove, and do not prove
 
+Run `node --test worker/live-loop.test.mjs` separately for an isolated synthetic organizer empty → new event → sourced first move → deduplication → stale-cache recovery check against the assembled Worker.
+
 `worker/runtime.test.mjs` exercises the runtime with mocked upstream responses and database behavior. Passing tests are useful regression evidence, not a live organizer integration certification. Inspect the test output for the exact covered cases and failures. A static preview does not exercise the Worker security boundary.
 
 Live verification needs an authorized runtime secret, a D1 binding and applied schema, an intentional review access mode, and the deployed revision. Configure these through the hosting service, never in browser code or committed files. Organizer rate limits and shared credential use remain operational constraints. Do not run ad hoc organizer calls concurrently with the deployed Worker.

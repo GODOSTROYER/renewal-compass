@@ -24,3 +24,5 @@ There is no timer after viewers leave. An approved unattended service can call t
 See [the reviewer proof path](docs/REVIEW.md) for a two-minute evaluation, credential-free local preview, exact verification commands, and limits of the evidence. In the public repository this directory is published as `hosting/`; run commands from that directory. No competition submission is performed by the build or test commands.
 
 `AQ_ACTION_EVIDENCE` is an optional account-name and exact-action-text overlay for source links on curated actions. Set it only in runtime configuration. It appends links for already existing actions; the mapper rejects references not in that account's evidence ledger.
+
+`AQ_ACTION_CHECKPOINTS` may add a clearly labeled internal verification date for an existing action that lacks a calendar deadline. It cannot replace organizer timing or an existing checkpoint. Internal targets are not customer commitments or calendar bookings.

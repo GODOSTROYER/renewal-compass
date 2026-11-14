@@ -190,3 +190,34 @@ test('optional exact action evidence overlay preserves existing plan and ignores
   assert.deepEqual((await parse(malformed)).actions.map(x=>x.evidenceIds),[['old-a'],[]]);
  }
 });
+
+test('proposed checkpoints validate calendar dates and sources without overwriting existing schedules',async()=>{
+ const db=fakeDb(), now=Date.now();
+ seed(db,'get_my_accounts',{...fixture,accounts:[
+  {id:'A',name:'Synthetic',facts:[{id:'exact-a',text:'Local source'}]}, {id:'B',name:'Other',facts:[{id:'foreign-b',text:'Other source'}]}
+ ]},now);
+ const existing={date:'2026-11-18',purpose:'Already planned',basis:'Existing plan'};
+ const plan={accountName:'Synthetic',recommendation:{actions:[
+  {action:'Verify timing',dueDate:'Next customer review',owner:'CSM'},
+  {action:'Dated timing',timing:{kind:'sourced-date',date:'2026-11-22',evidenceIds:['exact-a']}},
+  {action:'Plain calendar timing',dueDate:'Before 5 December'},
+  {action:'Already planned',proposedCheckpoint:existing},
+  {action:'Invalid date'},
+  {action:'Invalid calendar roll'},
+ ]}};
+ const proposedCheckpoint={date:'2026-11-16',purpose:'Confirm the exact date',basis:'Proposed CSM planning target',evidenceIds:['exact-a','foreign-b']};
+ const actions=Object.fromEntries(plan.recommendation.actions.map(x=>[x.action,{evidenceIds:['exact-a','foreign-b'],proposedCheckpoint}]));
+ actions['Invalid date'].proposedCheckpoint={...proposedCheckpoint,date:'2026-11-16T04:00:00Z'};
+ actions['Invalid calendar roll'].proposedCheckpoint={...proposedCheckpoint,date:'2026-02-30'};
+ const env={DB:db,AQ_REVIEW_MODE:'normalized',AQ_PLAN_A:JSON.stringify(plan),AQ_ACTION_EVIDENCE:JSON.stringify({A:{accountName:'Synthetic',actions}})};
+ const a=(await read(workerWith({now:()=>now}),env)).accounts[0].recommendation.actions;
+ assert.deepEqual(a[0].proposedCheckpoint,{...proposedCheckpoint,evidenceIds:['exact-a']});
+ assert.equal(a[0].dueDate,'Next customer review');
+ assert.equal(a[0].owner,'CSM');
+ assert.equal(a[1].proposedCheckpoint,undefined);
+ assert.deepEqual(a[1].timing,plan.recommendation.actions[1].timing);
+ assert.equal(a[2].proposedCheckpoint,undefined);
+ assert.deepEqual(a[3].proposedCheckpoint,{...existing,evidenceIds:[]});
+ assert.equal(a[4].proposedCheckpoint,undefined);assert.equal(a[5].proposedCheckpoint,undefined);
+ assert(a.every(x=>x.evidenceIds.join(',')==='exact-a'));
+});
