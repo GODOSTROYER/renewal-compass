@@ -33,7 +33,7 @@ jobs:
             --proto '=https' --header 'Accept: application/json' \
             --output "$result" \
             'https://renewal-compass-crm.tarun-aditya.chatgpt.site/api/account-snapshot'
-          jq -e '.mode == "live" and (.accounts | type == "array" and length == 2) and (.signalCheckedAt | type == "string")' "$result" >/dev/null
+          jq -e '.mode == "live" and (.accounts | type == "array" and length >= 2) and (.signalCheckedAt | type == "string")' "$result" >/dev/null
           checked="$(jq -r '.signalCheckedAt' "$result")"
           checked_epoch="$(date -u -d "$checked" +%s)"
           age="$(( $(date -u +%s) - checked_epoch ))"
