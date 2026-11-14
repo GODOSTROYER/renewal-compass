@@ -25,6 +25,13 @@ if(process.argv.includes('--check')){console.log('Worker ESM validated');process
 await rm(path('dist'),{force:true,recursive:true});
 await mkdir(path('dist','server'),{recursive:true});await mkdir(path('dist','.openai'),{recursive:true});
 await writeFile(path('dist','server','index.js'),worker);
-await copyFile(path('.openai','hosting.json'),path('dist','.openai','hosting.json'));
+try{
+ await copyFile(path('.openai','hosting.json'),path('dist','.openai','hosting.json'));
+}catch(error){
+ if(error.code!=='ENOENT')throw error;
+ // Public checkouts build locally with a placeholder, never a deployment identity.
+ await copyFile(path('.openai','hosting.example.json'),path('dist','.openai','hosting.json'));
+ console.log('Using public example hosting manifest: local verification only; configure .openai/hosting.json before deployment.');
+}
 await cp(path('drizzle'),path('dist','.openai','drizzle'),{recursive:true});
 console.log('Worker built: dist/server/index.js; migrations: dist/.openai/drizzle');

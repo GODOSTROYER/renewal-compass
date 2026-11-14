@@ -4,6 +4,8 @@ This wrapper serves the audited CRM UI and synchronizes with the organizer's doc
 
 ## Check and package
 
+Public checkouts without `.openai/hosting.json` use the public example manifest for local build and test verification only. Configure a real `.openai/hosting.json` through the hosting workflow before deployment; an existing real manifest is copied unchanged.
+
 Run `node scripts/build.mjs` followed by `node --test worker/runtime.test.mjs`. Run the build first: the tests import the assembled Worker, not its unbundled source. The build uses Node only and embeds the exact allowlisted browser assets under `crm/` in a Cloudflare Worker ES module. The production artifact is `dist/server/index.js`; `dist/.openai/hosting.json` declares the D1 `DB` binding and `dist/.openai/drizzle/` contains the schema migration. Use the Sites source/version workflow with the exact project and pushed revision; never publish runtime data in Git.
 
 ## Runtime configuration (names only)
