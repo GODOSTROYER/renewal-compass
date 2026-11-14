@@ -38,10 +38,27 @@ function actionCard(account,action,index){
  body.append(metadata('Risk trigger',trigger??'Not linked; validate with the action owner'));
  if(!timing.verified){const verify=add(el('div',null,'timing-check'),el('span','Calendar deadline not verified','timing-label'),el('p','Confirm the exact date with '+timing.verifyWith+'. Relative timing is not a calendar commitment.'));body.append(verify);}
  const checkpoint=action.proposedCheckpoint;
- if(calendarDate(checkpoint?.date)&&checkpoint?.purpose&&checkpoint?.basis)body.append(add(el('div',null,'proposed-checkpoint'),el('span','Proposed CRM checkpoint · '+checkpoint.date,'timing-label'),el('p',checkpoint.purpose),metadata('Basis',checkpoint.basis),el('p','Planning proposal, not a customer-agreed deadline.','metadata'),links(validSources(account,checkpoint.evidenceIds))));
+ if(calendarDate(checkpoint?.date)&&checkpoint?.purpose&&checkpoint?.basis)body.append(add(el('div',null,'proposed-checkpoint'),el('span','Proposed CRM checkpoint · '+checkpoint.date,'timing-label'),el('p',checkpoint.purpose),metadata('Basis',checkpoint.basis),el('p','Planning proposal, not a customer-agreed deadline. Separate from organizer scenario dates.','metadata'),links(validSources(account,checkpoint.evidenceIds))));
  if(action.origin)body.append(metadata('Basis',action.origin));
  body.append(sources.length?add(el('div',null,'action-provenance'),el('span','Action sources','meta-label'),links(sources)):el('p','No exact source is attached to this action. Validate it before committing.','source-missing'));
  return add(el('li',null,'action-item'),el('span',String(index+1).padStart(2,'0'),'action-number'),body);
+}
+function handoffText(account,action,constraintText){
+ const timing=actionTiming(account,action),sourceIds=validSources(account,action.evidenceIds),checkpoint=action.proposedCheckpoint;
+ // Handoffs contain planned work, never evidence excerpts, email addresses or phone numbers.
+ const clean=value=>String(value??'Not recorded').replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi,'[contact omitted]').replace(/(?:\+\d[\d ()-]{8,}\d|\b\d{3}[ .-]\d{3}[ .-]\d{4}\b)/g,'[contact omitted]');
+ const lines=[['Account',account.name],['Decision',account.recommendation?.decision],['Decision constraint',constraintText??'Not recorded; verify the required decision gate.'],['Owner',action.decisionOwner??action.owner],['Next move',action.action],['Timing',timing.text+(timing.verified?' (source-backed calendar deadline)':' (calendar deadline unverified)')]];
+ if(calendarDate(checkpoint?.date)&&checkpoint?.purpose&&checkpoint?.basis)lines.push(['Proposed checkpoint',checkpoint.date+' · '+checkpoint.purpose+' (internal proposed checkpoint, not the organizer scenario/customer deadline)']);
+ lines.push(['Done when',action.success]);
+ const result=action.verificationResult,resultIds=validSources(account,result?.evidenceIds).filter(id=>sourceIds.includes(id));
+ lines.push(['Verification result',result?.text&&resultIds.length?result.text:'Not recorded; not marked complete.']);
+ return lines.map(([label,value])=>label+': '+clean(value)).join('\n')+'\nExact source IDs: '+(sourceIds.length?sourceIds.join(', '):'None linked; source verification required.')+'\nThis is a handoff draft. Nothing has been sent or scheduled.';
+}
+function handoffControl(account,action,constraintText){
+ const control=el('div',null,'handoff-control'),button=el('button','Copy next move','handoff-button'),status=el('p',null,'handoff-status'),preview=el('details',null,'handoff-preview'),field=el('textarea');
+ button.type='button';status.setAttribute('role','status');field.readOnly=true;field.rows=10;field.setAttribute('aria-label','Read-only next move handoff');preview.hidden=true;preview.append(el('summary','View handoff text'),field);
+ button.addEventListener('click',async()=>{const text=handoffText(account,action,constraintText);field.value=text;preview.hidden=false;button.disabled=true;try{if(!navigator.clipboard?.writeText)throw Error('Clipboard unavailable');await navigator.clipboard.writeText(text);status.textContent='Copied. Nothing sent or scheduled.';preview.open=false;}catch{status.textContent='Clipboard unavailable. Select and copy the text below.';preview.open=true;field.focus();field.select();}finally{button.disabled=false;}});
+ control.append(button,status,preview);return control;
 }
 function discoveryProof(account){
  const action=prioritizedActions(account)[0];
@@ -51,7 +68,7 @@ function discoveryProof(account){
  if(!evidence.length)return null;
  const proof=el('section',null,'discovery-proof');proof.setAttribute('aria-labelledby','discovery-proof-title');
  const heading=el('h3','What changed the plan');heading.id='discovery-proof-title';
- proof.append(add(el('div',null,'proof-heading'),heading,el('p','Current evidence → first action · not a change history')));
+ const headingRow=add(el('div',null,'proof-heading'),add(el('div'),heading,el('p','Current evidence → first action · not a change history','proof-subtitle')));proof.append(headingRow);
  const sources=el('div',null,'proof-sources');
  for(const source of evidence){
   const sourceMarkedVerified=/^verified\b/i.test(String(source.confidence??''));
@@ -63,7 +80,22 @@ function discoveryProof(account){
  next.append(metadata('Verification result',result?.text&&verificationSources.length?result.text:'Not recorded; the action is not marked complete.'));
  if(result?.text&&verificationSources.length)next.append(links(verificationSources));
  else if(action.success)next.append(metadata('Confirm by',action.success));
- proof.append(add(el('div',null,'proof-grid'),sources,next));return proof;
+ proof.append(add(el('div',null,'proof-grid'),sources,next));
+ const constraint=action.decisionConstraint,constraintIds=constraint?.evidenceIds??[];
+ const explicitlyScoped=typeof constraint?.text==='string'&&constraint.text.trim()&&Array.isArray(constraintIds)&&constraintIds.length>0&&constraintIds.every(id=>scoped.has(id));
+ const constraintText=explicitlyScoped?constraint.text:typeof action.success==='string'&&action.success.trim()?'Advancing '+(action.deal??'this action')+' without this completion evidence: '+action.success:null;
+ if(constraintText){const guardrail=add(el('div',null,'proof-constraint'),add(el('div'),el('span','What this evidence prevents','proof-label'),el('p','CRM decision constraint · not an observed attempted move','proof-source-state')),add(el('div',null,'constraint-content'),el('p',constraintText,'constraint-text'),links(explicitlyScoped?constraintIds:evidence.map(x=>x.id))));guardrail.dataset.basis=explicitlyScoped?'scoped-constraint':'recorded-completion-test';proof.append(guardrail);}
+ headingRow.append(handoffControl(account,action,constraintText));
+ return proof;
+}
+function observationDetails(account){
+ const stateLabels={'baseline':'Baseline observation','first-observed-after-baseline':'First observed after baseline','unchanged':'Unchanged in local observations','content-changed':'Content changed in local observations','reappeared':'Reappeared in latest feed','not-in-latest-feed':'Not in latest feed'};
+ const present=(account.signals??[]).map(x=>x.observation).filter(x=>x&&stateLabels[x.state]),absent=(account.signalTrail?.absent??[]).filter(x=>x&&x.state==='not-in-latest-feed');
+ if(!present.length&&!absent.length&&!account.signalTrail?.baselineAt)return null;
+ const details=add(el('details',null,'event-observations'),el('summary','Event observation trail · '+present.length+' tracked current · '+absent.length+' not in latest feed'),el('p','Local observations are not source arrival times. Not in the latest feed does not mean resolved.','observation-caveat'));
+ const safeTime=value=>value&&!Number.isNaN(Date.parse(value))?sourceTime(value):'not recorded';
+ if(account.signalTrail?.baselineAt)details.append(metadata('Local baseline',safeTime(account.signalTrail.baselineAt)));
+ const rows=el('ul');for(const item of [...present,...absent].slice(0,20)){const row=add(el('li'),el('strong',String(item.id??'Identifier not recorded').slice(0,160)),metadata('Observed state',stateLabels[item.state]),metadata('First observed',safeTime(item.firstObservedAt)),metadata('Last observed',safeTime(item.lastObservedAt)));if(item.materialChangeAt)row.append(metadata('Change observed',safeTime(item.materialChangeAt)));if(item.lastReappearedAt)row.append(metadata('Reappearance observed',safeTime(item.lastReappearedAt)));if(item.absentSince)row.append(metadata('Absent since',safeTime(item.absentSince)));rows.append(row);}details.append(rows);if(present.length+absent.length>20)details.append(el('p','Showing the first 20 observation records.','metadata'));return details;
 }
 function freshnessPanel(account){
  const stale=snapshot.syncStatus==='stale',signals=account.signals?.length??0,notes=account.notes?.length??0,hasEventCoverage=Array.isArray(account.signals)&&Array.isArray(account.notes);
@@ -74,6 +106,7 @@ function freshnessPanel(account){
  if(health.accountsCheckedAt||paperwork)n.append(el('p','Accounts checked: '+sourceTime(health.accountsCheckedAt)+' · Paperwork checked: '+sourceTime(paperwork),'snapshot-health'));
  if(health.lastSignalFailureAt)n.append(el('p','Signal refresh last failed: '+sourceTime(health.lastSignalFailureAt)+(health.signalRetryAt?' · Retry available after '+sourceTime(health.signalRetryAt):''),'snapshot-health'));
  if(stale)n.append(el('p','Use the sourced account facts below; verify changing deadlines and event status before acting. Refresh data to retry.','snapshot-warning'));
+ const observations=observationDetails(account);if(observations)n.append(observations);
  return n;
 }
 function render(){
@@ -95,6 +128,7 @@ function render(){
  routes.append(jump('Buying group','deals'),jump('Top 3 actions','actions'),jump('Timed risks','risks'),jump('Missing facts','gaps'),jump('Exact sources','evidence'));
  overview.append(metrics);out.append(overview);const proof=discoveryProof(a);if(proof)out.append(proof);out.append(freshnessPanel(a),routes);
  const r=a.recommendation, grid=el('div',null,'grid'), plan=card('Top actions',true);plan.id=blockId('actions');
+ if(!proof&&prioritizedActions(a)[0])plan.prepend(handoffControl(a,prioritizedActions(a)[0],null));
  if(r){plan.append(add(el('div',null,'decision-context'),metadata('Confidence',r.confidence),el('p',r.reason??'','decision-reason')),metadata('Biggest unknown',r.unknown),links(r.evidence));list(plan,prioritizedActions(a).slice(0,3),(x,i)=>actionCard(a,x,i), 'No actions recorded.')}
  else empty(plan,'Make no recommendation until there is evidence.');
  const pendingTiming=prioritizedActions(a).slice(0,3).filter(x=>!actionTiming(a,x).verified);
@@ -106,6 +140,7 @@ function render(){
  list(deals,a.deals,x=>{
   const n=add(el('li',null,'deal-item'),add(el('div',null,'deal-summary'),el('strong',x.name??'Deal','deal-name'),metadata('Stage',x.stage),metadata('Value',money(x.value,x.currency)),metadata('Tries left',x.attemptsRemaining)),add(el('div',null,'deal-facts'),metadata('Deadline',x.deadlineText??remaining(a.move,x.deadlineMove)),metadata('Blocker',x.blocker),metadata('Authority',x.approver)),links(x.evidence));
   n.dataset.stage=String(x.stage??'unknown').toLowerCase();
+  const signer=x.signer,signerSources=validSources(a,signer?.evidenceIds);n.querySelector('.deal-facts').append(metadata('Final signer',signer?.verified===true&&signer?.name&&signerSources.length?signer.name:'Not explicitly verified in this snapshot'));if(signer?.verified===true&&signer?.name&&signerSources.length)n.querySelector('.deal-facts').append(links(signerSources));
   if(x.roles?.length){
    const group=el('details');group.open=true;group.append(el('summary','Deal stakeholders and trust'));
    list(group,x.roles,y=>add(el('li'),el('strong',y.role??'Role unknown'),metadata('Person',y.name),metadata('Trust',y.trust),y.rationale?el('p',y.rationale,'metadata'):'',links(y.evidenceIds)),'Deal roles are not verified.');n.append(group);
@@ -138,7 +173,8 @@ function render(){
  list(risks,a.risks,x=>add(el('li'),el('strong',x.title),metadata('Timing',x.dueDate??remaining(a.move,x.dueMove)),metadata('Impact',x.impact),links(x.evidenceIds)),'No sourced timed risks recorded.');
  const timingGaps=pendingTiming.filter((x,i,all)=>all.findIndex(y=>(y.deal??y.action)===(x.deal??x.action))===i).map(x=>({question:'What is the exact calendar deadline for '+(x.deal??x.action)+'?',why:'Recorded timing: '+actionTiming(a,x).text+'. A relative window cannot be treated as a verified date.',ask:actionTiming(a,x).verifyWith,success:'Owner records an exact date, confirms it with the decision-route contact and attaches the source. Until then, keep the deadline unverified.',evidenceIds:validSources(a,x.evidenceIds)}));
  list(gaps,[...timingGaps,...(a.gaps??[])],x=>add(el('li'),el('strong',x.question),metadata('Why it matters',x.why),metadata('Confirm with',x.ask??'Unassigned; manager to name an owner'),metadata('Closure test',x.success??'Record the answer and its exact source before treating this gap as resolved'),links(x.evidenceIds)),'No explicit discovery gaps recorded.');
- list(notes,[...(a.signals??[]),...(a.notes??[])],x=>add(el('li'),el('strong',x.title??x.kind??'Signal'),el('p',x.text),metadata('Reported',x.at),x.arrivedAt?metadata('Received',x.arrivedAt):'',links(x.evidenceIds)),(snapshot.syncStatus==='stale'?'The last saved response contains no signals or notes. Refresh is not confirmed; event coverage may be incomplete.':'The current response contains no signals or notes for this account. This does not clear the sourced risks or missing facts above.'));
+ if(a.signals?.length)notes.append(el('p','Organizer scenario dates are separate from feed arrival, local observations and internal proposed checkpoints.','observation-caveat'));
+ list(notes,[...(a.signals??[]).map(x=>({...x,_signalEntry:true})),...(a.notes??[]).map(x=>({...x,_signalEntry:false}))],x=>add(el('li'),el('strong',x.title??x.kind??'Signal'),el('p',x.text),metadata(x._signalEntry?'Organizer scenario date':'Note date',x.at),x.arrivedAt?metadata(x._signalEntry?'Organizer feed arrival':'Recorded timestamp',x.arrivedAt):'',links(x.evidenceIds)),(snapshot.syncStatus==='stale'?'The last saved response contains no signals or notes. Refresh is not confirmed; event coverage may be incomplete.':'The current response contains no signals or notes for this account. This does not clear the sourced risks or missing facts above.'));
  out.append(add(grid,plan,deals,risks,gaps,notes,evidence,stake,timeline,quality));
  out.querySelectorAll('.grid>.card').forEach((n,i)=>n.style.setProperty('--reveal-delay',Math.min(i,5)*45+'ms'));
  document.title=a.name+' · Renewal Compass';

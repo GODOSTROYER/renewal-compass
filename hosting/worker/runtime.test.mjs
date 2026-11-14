@@ -221,3 +221,67 @@ test('proposed checkpoints validate calendar dates and sources without overwriti
  assert.equal(a[4].proposedCheckpoint,undefined);assert.equal(a[5].proposedCheckpoint,undefined);
  assert(a.every(x=>x.evidenceIds.join(',')==='exact-a'));
 });
+
+test('valid feed observation trail distinguishes legacy replay, edits, disappearance and reappearance',async()=>{
+ const db=fakeDb(), start=Date.now(), before=start-240000;let clock=start;
+ const event={id:'known',account:'A',title:'Existing event',summary:'Original',dated:'2026-11-16',set_off_at:'old-transport'};
+ const sameIdOther={...event,account:'B',title:'Other account event'};
+ seed(db,'get_my_accounts',{...fixture,accounts:[fixture.accounts[0],{id:'B',name:'Other'}]},start);
+ for(const account of ['A','B'])seed(db,'get_all_paperwork:'+account,{account,records:[]},start);
+ // Old format can be a previously verified JSON-RPC MCP wrapper.
+ seed(db,'get_signals',{structuredContent:{signals:[event,sameIdOther]}},before);
+ let responseValue={signals:[{...event,set_off_at:'replayed-transport'},sameIdOther]};
+ const app=workerWith({now:()=>clock,upstreamFetch:async(url,init)=>Response.json({id:JSON.parse(init.body).id,result:responseValue})});
+ const env=active(db), at=()=>new Date(clock).toISOString();
+ const run=async value=>{clock+=185000;responseValue=value;return read(app,env);};
+ let snapshot=await read(app,env), [a,b]=snapshot.accounts;
+ assert.equal(a.signals[0].observation.state,'unchanged');
+ assert.equal(a.signals[0].observation.firstObservedAt,new Date(before).toISOString());
+ assert.equal(a.signals[0].observation.lastObservedAt,at());
+ assert(!JSON.stringify(snapshot).includes('_crmSignalObservations'));assert(!JSON.stringify(snapshot).includes('digest'));
+ assert.equal(b.signals[0].observation.state,'unchanged');
+ snapshot=await run({signals:[{...event,summary:'Material edit'},sameIdOther,{...event,id:'unseen-locally'}]});[a,b]=snapshot.accounts;
+ assert.equal(a.signals[0].observation.state,'content-changed');assert.equal(a.signals[0].observation.materialChangeAt,at());
+ assert.equal(a.signals[1].observation.state,'first-observed-after-baseline');
+ assert.equal(b.signals[0].observation.state,'unchanged');
+ snapshot=await run({unexpected:true});[a]=snapshot.accounts;
+ assert.equal(a.signals[0].observation.state,'content-changed');
+ assert(Date.parse(a.signalTrail.updatedAt)<clock);
+ snapshot=await run({signals:[sameIdOther]});[a,b]=snapshot.accounts;
+ assert.equal(a.signals.length,0);assert.equal(b.signals.length,1);assert.equal(b.signalTrail.absent.length,0);
+ const absent=a.signalTrail.absent.find(x=>x.id==='known');
+ assert.equal(absent.state,'not-in-latest-feed');assert.equal(absent.absentSince,at());
+ assert.match(a.signalTrail.basis,/not organizer publication or resolution/);
+ snapshot=await run({signals:[{...event,summary:'Material edit'},sameIdOther]});[a]=snapshot.accounts;
+ assert.equal(a.signals[0].observation.state,'reappeared');assert.equal(a.signals[0].observation.firstObservedAt,new Date(before).toISOString());
+ assert.equal(a.signals[0].observation.lastReappearedAt,at());
+ assert(!a.signalTrail.absent.some(x=>x.id==='known'));
+ const reappearedAt=at();
+ snapshot=await run({signals:[{...event,summary:'Material edit'},sameIdOther]});[a]=snapshot.accounts;
+ assert.equal(a.signals[0].observation.state,'unchanged');assert.equal(a.signals[0].observation.lastReappearedAt,reappearedAt);
+});
+
+test('exact action constraint requires account-scoped evidence and preserves an existing constraint',async()=>{
+ const db=fakeDb(),now=Date.now();
+ seed(db,'get_my_accounts',{...fixture,accounts:[
+  {id:'A',name:'Synthetic',facts:[{id:'own-id',text:'Local gate'}]}, {id:'B',name:'Other',facts:[{id:'foreign-id',text:'Other gate'}]}
+ ]},now);
+ const plan={accountName:'Synthetic',recommendation:{actions:[
+  {action:'Eligible',owner:'CSM'},
+  {action:'Foreign only'},
+  {action:'Existing',decisionConstraint:{text:'Keep this real constraint',evidenceIds:['own-id']}},
+  {action:'No evidence'},
+ ]}};
+ const actions={
+  Eligible:{decisionConstraint:{text:'Keep scoped documents until verified',evidenceIds:['own-id','foreign-id','own-id']}},
+  'Foreign only':{decisionConstraint:{text:'Should not be shown',evidenceIds:['foreign-id']}},
+  Existing:{decisionConstraint:{text:'Cannot replace curated value',evidenceIds:['own-id']}},
+  'No evidence':{decisionConstraint:{text:'No records',evidenceIds:[]}}
+ };
+ const env={DB:db,AQ_REVIEW_MODE:'normalized',AQ_PLAN_A:JSON.stringify(plan),AQ_ACTION_CHECKPOINTS:JSON.stringify({A:{accountName:'Synthetic',actions}})};
+ const a=(await read(workerWith({now:()=>now}),env)).accounts[0].recommendation.actions;
+ assert.deepEqual(a[0].decisionConstraint,{text:'Keep scoped documents until verified',evidenceIds:['own-id']});
+ assert.equal(a[0].owner,'CSM');assert.equal(a[1].decisionConstraint,undefined);
+ assert.deepEqual(a[2].decisionConstraint,plan.recommendation.actions[2].decisionConstraint);
+ assert.equal(a[3].decisionConstraint,undefined);
+});

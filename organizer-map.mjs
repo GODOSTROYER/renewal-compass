@@ -73,9 +73,14 @@ export function normalizeOrganizer(results,plans={}){
   const fallback=buildFallback({opportunities:planOpps,evidence,stakeholders:people,signals:relevant.filter(x=>!privatePlan.signalPolicy?.[x.id]),contract:bookValue,accountRef,accountMove});
   const localEvidenceIds=new Set(evidence.map(x=>x.id));
   const localIds=ids=>[...new Set(list(ids).filter(id=>typeof id==='string'&&localEvidenceIds.has(id)))];
-  const sourcedAction=x=>({...x,evidenceIds:localIds(x.evidenceIds),...(x.proposedCheckpoint&&{
-   proposedCheckpoint:{...x.proposedCheckpoint,evidenceIds:localIds(x.proposedCheckpoint.evidenceIds)}
-  })});
+  const sourcedAction=x=>{
+   const {decisionConstraint,...base}=x, support=localIds(decisionConstraint?.evidenceIds);
+   return {...base,evidenceIds:localIds(x.evidenceIds),...(x.proposedCheckpoint&&{
+    proposedCheckpoint:{...x.proposedCheckpoint,evidenceIds:localIds(x.proposedCheckpoint.evidenceIds)}
+   }),...(typeof decisionConstraint?.text==='string'&&decisionConstraint.text.trim()&&decisionConstraint.text.length<=400&&support.length&&{
+    decisionConstraint:{text:decisionConstraint.text.trim(),evidenceIds:support}
+   })};
+  };
   const recommendation=privatePlan.recommendation?{
    ...privatePlan.recommendation,actions:[...rankSignals(relevant,privatePlan.signalPolicy),...fallback.signalActions,...list(privatePlan.recommendation.actions)].filter(x=>x&&typeof x==='object').map(sourcedAction)
   }:fallback.recommendation;

@@ -36,9 +36,15 @@ The root-level Node server is an alternative deployment, not the submitted servi
 
 ### Judge proof check · 14 November 2026
 
-The submitted service was verified without sign-in at 09:15 UTC on Worker revision `7f4d15f`: both sourced books (£350,000 and €140,000), all six ranked moves with exact sources and proposed verification checkpoints, and a successful empty signal check. That proves current readability and checking, not a new organizer event or note write. Proposed checkpoints are not customer deadlines.
+The submitted service was verified without sign-in at 10:06 UTC on Worker revision `5c207f4`: both books (£350,000 and €140,000), six evidence-backed decision constraints, and the same two known organizer signals reappearing in the feed. This is observed feed recovery, not two new arrivals. The production response fingerprint matched the locally built Worker and assets. Proposed checkpoints are not customer deadlines.
 
 - **Eastern Counties:** open Account brief → Exact sources. `paperwork:A/profile.json` backs the annual book. `fo_dpia_2` identifies the missing-document blocker; `srv_dataflow` is the engineering handoff. The first move is delivering the pack and getting Fatima to confirm receipt and the DPIA decision date.
 - **Aldermoor:** `paperwork:B/profile.json` backs the annual book. `ba_deputy_0` identifies continuity risk; the first move is documenting the deputy's rollout and naming a backup who can reproduce one rollout. The deputy's exact departure date remains unverified.
 
 To reproduce the public acceptance checks, run `node scripts/check-public.mjs --require-action-sources` from `hosting/`. For a separate synthetic end-to-end ingestion check, run `node --test worker/live-loop.test.mjs`. It rebuilds the Worker and proves a synthetic signal can change an exact sourced first action, without contacting the organizer.
+
+### The Monday handoff
+
+Select either account and use **Copy next move** to take the verification task, owner, dates with their basis, success test, and source IDs into your own workflow. It does not send or assign anything. The decision constraint tells you what to avoid until evidence is in. The timeline labels scenario, feed, and CRM observation clocks separately. The observation trail is not evidence that the organizer published a new event or resolved a risk.
+
+The [judge-window refresh workflow](.github/workflows/questathon-refresh.yml) is configured to make a single unauthenticated request on a best-effort cadence, ending with the judging window. A committed workflow alone does not establish successful scheduling, consistent cadence, or event delivery.

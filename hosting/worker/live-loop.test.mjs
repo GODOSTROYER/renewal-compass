@@ -73,7 +73,12 @@ test('SYNTHETIC built Worker: empty → sourced ranked change → duplicate → 
  assert.notDeepEqual(prioritizedActions(a),prioritizedActions(empty.accounts[0]));
  step=2;clock+=181000;
  const duplicate=await read();
- assert.deepEqual(duplicate.accounts[0],a,'Duplicate transport rows must not add event/evidence/action');
+ const replayed=duplicate.accounts[0];
+ assert.deepEqual(replayed.signals.map(s=>s.id),[signal.id],'Duplicate transport rows must not add events');
+ assert.deepEqual(replayed.evidence,a.evidence,'Duplicate transport rows must not add evidence');
+ assert.deepEqual(prioritizedActions(replayed),prioritizedActions(a),'Duplicate transport rows must not alter ranked actions');
+ assert.equal(replayed.signals[0].observation.state,'unchanged');
+ assert.equal(replayed.signals[0].observation.firstObservedAt,a.signals[0].observation.firstObservedAt);
  const lastGoodAt=duplicate.signalCheckedAt;
  step=3;clock+=181000;
  const failed=await read();
@@ -81,6 +86,6 @@ test('SYNTHETIC built Worker: empty → sourced ranked change → duplicate → 
  assert.equal(failed.syncHealth.signalState,'stale');
  assert.equal(failed.signalCheckedAt,lastGoodAt,'Failure must not masquerade as a successful fresh check');
  assert.equal(failed.syncHealth.lastSignalFailureAt,new Date(clock).toISOString());
- assert.deepEqual(failed.accounts[0],a,'Failed response preserves exact sourced action and last good event');
+ assert.deepEqual(failed.accounts[0],replayed,'Failed response preserves exact sourced action and last good observation');
  assert.deepEqual(calls,['get_signals','get_signals','get_signals','get_signals']);
 });

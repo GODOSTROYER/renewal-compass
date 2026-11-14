@@ -41,3 +41,12 @@ This repository and deployment are review artifacts. Neither publishing source n
 ## One-command public check
 
 From `hosting/`, run `node scripts/check-public.mjs --require-action-sources`. This checks the existing public URL once without a login and confirms both accounts, exact in-account sources on the ranked moves, and the public note-body boundary. The output identifies stale, successfully empty, or signal-present data without treating any of them as proof that a new event arrived. It never calls the organizer directly or writes a note.
+
+## Human handoff
+
+1. Open an account, read the first move and what its evidence prevents, then open the attached source. Reported facts are not treated as verified authority.
+2. Click **Copy next move**. The handoff contains the action, owner, timing basis, completion test, and exact source IDs. It does not send a message or create or assign a task. If the clipboard is unavailable, use the selectable preview.
+3. Check the date label. Organizer scenario dates, organizer feed arrivals, CRM observation timestamps, and proposed real-world checkpoints are different clocks. A proposed date is not a customer commitment.
+4. A previously recorded organizer ID may be missing or reappear later. The observation trail records what this deployment saw. It does not establish when the organizer first issued an event, whether the problem was resolved, or whether a recommended action happened.
+
+For a local review of a saved public response, build the Worker and run `node scripts/verify-release.mjs /path/to/snapshot.json`. It verifies the exact compiled fingerprint and reviewer boundaries without any network access. It is a point-in-time comparison, not live-feed certification.

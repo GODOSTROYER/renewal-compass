@@ -66,6 +66,61 @@ function validPayload(key,value){
  if(key.startsWith('get_all_paperwork:'))return value?.account===key.split(':')[1]&&Array.isArray(value.records);
  return false;
 }
+const OBSERVATION_KEY='_crmSignalObservations';
+const MAX_ABSENT_OBSERVATIONS=100;
+const ABSENT_RETENTION_MS=30*86400000;
+const signalKey=s=>JSON.stringify([s.account,s.id]);
+async function signalDigest(s){
+ const records=(Array.isArray(s.records)?s.records:[]).map(r=>JSON.stringify([r?.kind??null,r?.path??null,r?.note??null,r?.text??null])).sort();
+ const semantic=JSON.stringify([s.title,s.summary??null,s.dated??null,records]);
+ const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(semantic));
+ return [...new Uint8Array(digest)].map(x=>x.toString(16).padStart(2,'0')).join('');
+}
+async function observedSignals(previous,value,at){
+ const saved=previous?.value?.[OBSERVATION_KEY];
+ const base=typeof saved?.baselineAt==='string'?saved.baselineAt:previous?.at??at;
+ const states=new Map();
+ if(Array.isArray(saved?.entries)){
+  for(const row of saved.entries)if(typeof row?.id==='string'&&typeof row?.account==='string')states.set(signalKey(row),row);
+ }else{
+  // Existing verified cache is the earliest local baseline we can prove; don't call its contents new.
+  for(const s of payload(previous?.value)?.signals??[])states.set(signalKey(s),{
+   id:s.id,account:s.account,firstObservedAt:previous.at,lastObservedAt:previous.at,digest:await signalDigest(s),state:'baseline'
+  });
+ }
+ const seen=new Set();
+ for(const s of value.signals){
+  const key=signalKey(s);
+  if(seen.has(key))continue;
+  seen.add(key);
+  const prior=states.get(key), digest=await signalDigest(s), changed=Boolean(prior&&prior.digest!==digest);
+  states.set(key,{id:s.id,account:s.account,firstObservedAt:prior?.firstObservedAt??at,lastObservedAt:at,digest,
+   state:prior?.absentSince?'reappeared':changed?'content-changed':prior?'unchanged':previous?'first-observed-after-baseline':'baseline',
+   materialChangeAt:changed?at:prior?.materialChangeAt,lastReappearedAt:prior?.absentSince?at:prior?.lastReappearedAt});
+ }
+ const absent=[], current=[];
+ for(const [key,row] of states){
+  if(seen.has(key))current.push(row);
+  else{
+   const absentSince=row.absentSince??at;
+   if(Date.parse(at)-Date.parse(absentSince)<=ABSENT_RETENTION_MS)absent.push({...row,state:'not-in-latest-feed',absentSince});
+  }
+ }
+ absent.sort((a,b)=>b.absentSince.localeCompare(a.absentSince)||signalKey(a).localeCompare(signalKey(b)));
+ return {...value,[OBSERVATION_KEY]:{baselineAt:base,entries:[...current,...absent.slice(0,MAX_ABSENT_OBSERVATIONS)]}};
+}
+function withObservationTrail(normalized,cached){
+ const trail=cached?.value?.[OBSERVATION_KEY];
+ if(!Array.isArray(trail?.entries))return normalized;
+ const safe=row=>({id:row.id,state:row.state,firstObservedAt:row.firstObservedAt,lastObservedAt:row.lastObservedAt,
+  ...(row.materialChangeAt&&{materialChangeAt:row.materialChangeAt}),...(row.lastReappearedAt&&{lastReappearedAt:row.lastReappearedAt}),...(row.absentSince&&{absentSince:row.absentSince})});
+ return {...normalized,accounts:normalized.accounts.map(a=>{
+  const scoped=trail.entries.filter(row=>row.account===a.id), byId=new Map(scoped.map(row=>[row.id,row]));
+  return {...a,signals:(a.signals??[]).map(s=>({...s,...(byId.has(s.id)&&{observation:safe(byId.get(s.id))})})),
+   signalTrail:{baselineAt:trail.baselineAt,updatedAt:cached.at,basis:'CRM Worker observations, not organizer publication or resolution',
+    absent:scoped.filter(row=>row.absentSince).map(safe)}};
+ })};
+}
 async function persist(db,key,at,value){
  await db.prepare('INSERT INTO quest_cache(name,retrieved_at,value) VALUES(?,?,?) ON CONFLICT(name) DO UPDATE SET retrieved_at=excluded.retrieved_at,value=excluded.value').bind(key,at,JSON.stringify(value)).run();
 }
@@ -112,9 +167,12 @@ function overlayActionEvidence(plans,raw){
    const extra=scoped.actions[action.action], incoming=Array.isArray(extra)?extra:record(extra)?extra.evidenceIds:undefined;
    const idList=x=>Array.isArray(x)&&x.every(id=>typeof id==='string'&&id.trim()===id&&id.length>0);
    if(incoming!==undefined&&!idList(incoming))return action;
-   const out=incoming?.length?{...action,evidenceIds:[...new Set([...(Array.isArray(action.evidenceIds)?action.evidenceIds:[]),...incoming])]}:action;
+   let out=incoming?.length?{...action,evidenceIds:[...new Set([...(Array.isArray(action.evidenceIds)?action.evidenceIds:[]),...incoming])]}:action;
    const checkpoint=record(extra)?extra.proposedCheckpoint:undefined;
    const text=x=>typeof x==='string'&&x.trim().length>0&&x.length<=400;
+   const constraint=record(extra)?extra.decisionConstraint:undefined;
+   if(!action.decisionConstraint&&record(constraint)&&text(constraint.text)&&idList(constraint.evidenceIds)&&constraint.evidenceIds.length)
+    out={...out,decisionConstraint:{text:constraint.text.trim(),evidenceIds:[...new Set(constraint.evidenceIds)]}};
    if(!record(checkpoint)||action.proposedCheckpoint||suppliedCalendar(action)||!isoCalendarDate(checkpoint.date)
     ||!text(checkpoint.purpose)||!text(checkpoint.basis)||(checkpoint.evidenceIds!==undefined&&!idList(checkpoint.evidenceIds)))return out;
    return {...out,proposedCheckpoint:{date:checkpoint.date,purpose:checkpoint.purpose.trim(),basis:checkpoint.basis.trim(),
@@ -136,7 +194,7 @@ function privatePlans(env){
  }
  return overlayActionEvidence(overlayActionEvidence(parsed,env.AQ_ACTION_EVIDENCE),env.AQ_ACTION_CHECKPOINTS);
 }
-async function upstream(env,key,args={},upstreamFetch=(...args)=>globalThis.fetch(...args),now=Date.now()){
+async function upstream(env,key,args={},upstreamFetch=(...args)=>globalThis.fetch(...args),now=Date.now(),previous){
  const write=key==='write_note';
  if(!env.DB||!env.AQ_TOKEN||(!write&&!READ_TYPES.has(key)))throw Error('Organizer not configured');
  if(!await reserve(env.DB,now))return {state:'cooldown'};
@@ -160,7 +218,7 @@ async function upstream(env,key,args={},upstreamFetch=(...args)=>globalThis.fetc
  }else{
   const value=payload(envelope.result);
   if(!validPayload(key,value))throw Error('Organizer payload schema not recognized');
-  await persist(env.DB,key,at,value);
+  await persist(env.DB,key,at,key==='get_signals'?await observedSignals(previous,value,at):value);
  }
  return {state:'updated'};
 }
@@ -188,7 +246,7 @@ async function refresh(env,snapshot,upstreamFetch,now){
    ||lastAttempt(a)-lastAttempt(b)||timing(a)+REFRESH_EVERY[a]-timing(b)-REFRESH_EVERY[b];
  })[0];
  if(!work)return {state:proposals.length?'retry-pending':'fresh'};
- try{return await upstream(env,work,{},upstreamFetch,now);}
+ try{return await upstream(env,work,{},upstreamFetch,now,snapshot[work]);}
  catch(err){
   const failures=previouslyFailed(work)?(snapshot[retryKey(work)]?.value?.failures??0)+1:1;
   const reason=failureReason(err);
@@ -240,7 +298,8 @@ async function getLive(req,env,ctx,upstreamFetch,now){
   const syncHealth={accountsCheckedAt:results.get_my_accounts?.at??null,
    paperworkCheckedAt:{A:results['get_all_paperwork:A']?.at??null,B:results['get_all_paperwork:B']?.at??null},signalState:!env.AQ_TOKEN?'not-connected':status==='stale'?'stale':!normalized.signalCheckedAt?'awaiting-first-check':normalized.accounts.some(a=>a.signals?.length)?'signals-present':'fresh-empty',
    ...(lastFailed&&{lastSignalFailureAt:signalAttempt.at,signalRetryAt:new Date(signalAttempt.value.retryAt).toISOString()})};
-  return api(reviewerView({...normalized,syncStatus:status,syncHealth}));
+  return api(reviewerView({...withObservationTrail(normalized,results.get_signals),syncStatus:status,syncHealth,
+   ...(typeof RELEASE_FINGERPRINT==='string'&&{releaseFingerprint:RELEASE_FINGERPRINT})}));
  }catch{return api({error:'Organizer cache temporarily unavailable',status:'pending'},503);}
 }
 export function workerWith({upstreamFetch=(...args)=>globalThis.fetch(...args),now=Date.now}={}){
