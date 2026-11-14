@@ -1,12 +1,33 @@
 // Normalized UI contract. Source adapters must supply load() returning this shape.
 export const fixture={mode:'fixture',accounts:[
-{id:'north',name:'Northstar Facilities',context:'Illustrative account, not Questathon data.',move:4,
-stakeholders:[{name:'Morgan Chen',role:'Operations lead',authority:'Operational champion; approver unknown',trust:'Warm'},{name:'Taylor Fox',role:'Finance partner',authority:'Budget owner (unconfirmed)',trust:'Neutral'}],
-evidence:[{id:'E-01',sourceId:'sample-coverage-export',title:'Coverage export',source:'Sample data room / telemetry',confidence:'High',claim:'Night-shift completion is below target.',move:2},{id:'E-02',sourceId:'sample-ops-interview',title:'Operations interview',source:'Sample journal / Morgan Chen',confidence:'Medium',claim:'Day-shift rollout is healthy; night shift still falls back to manual coverage.',move:3}],
-deals:[{name:'Core renewal',value:120000,currency:'USD',stage:'Qualified',deadlineMove:8,blocker:'No accepted night-shift coverage plan',approver:'Morgan Chen for operating plan; signer unconfirmed',attemptsRemaining:2,proposal:{recipient:'Morgan Chen',kind:'Operating plan',requiredSourceIds:['sample-coverage-export','sample-ops-interview']},evidence:['E-01','E-02']}],
-recommendation:{decision:'Protect the core renewal; defer expansion.',confidence:'Medium',reason:'Operational evidence shows a defined adoption gap, but signer and budget remain unconfirmed.',evidence:['E-01','E-02'],unknown:'Who signs and what evidence will finance accept?',actions:[{owner:'CSM',move:5,action:'Ask Morgan for the signer and confirm acceptance criteria.',success:'Named signer and a measurable night-shift coverage target.'},{owner:'Operations',move:7,action:'Review a pilot recovery plan with Morgan.',success:'Morgan approves scope and measurement before the renewal gate.'}]},
-timeline:[{move:2,text:'Coverage export collected.',evidence:['E-01']},{move:3,text:'Night-shift fallback corroborated by Operations.',evidence:['E-02']}]},
-{id:'harbor',name:'Harbor Manufacturing',context:'Illustrative account, not Questathon data.',move:1,stakeholders:[{name:'Jamie Soto',role:'Plant manager',authority:'Operational stakeholder; buying authority unknown',trust:'Neutral'}],evidence:[],deals:[],recommendation:{decision:'Continue discovery before making an offer.',confidence:'Low',reason:'No documentary evidence or confirmed buyer.',unknown:'What operational outcome would justify renewal?',actions:[{owner:'CSM',move:2,action:'Ask the plant manager what is still being done manually and who signs off.',success:'Named workflow pain and a decision-maker introduction.'}]},timeline:[]}
+ {id:'north',name:'Northstar Facilities',context:'Synthetic example only. Night-shift adoption is incomplete even though the day rollout appears healthy.',move:4,
+  stakeholders:[
+   {name:'Morgan Chen',role:'Operations lead',authority:'Owns pilot acceptance; contract authority not recorded',trust:'Warm'},
+   {name:'Taylor Fox',role:'Finance partner',authority:'Reviews renewal evidence; final signer unknown',trust:'Neutral'}
+  ],
+  evidence:[
+   {id:'sample:coverage',sourceId:'sample:coverage',title:'Coverage export',source:'Synthetic telemetry',confidence:'Sample record',claim:'Night-shift coverage is 58%, below the pilot target of 80%.'},
+   {id:'sample:handovers',sourceId:'sample:handovers',title:'Shift handover',source:'Synthetic interview',confidence:'Reported in sample',claim:'Morgan reports operators fall back to a manual route when a pilot exception is raised.'},
+   {id:'sample:finance',sourceId:'sample:finance',title:'Finance acceptance',source:'Synthetic interview',confidence:'Reported in sample',claim:'Taylor requires a comparable two-week operating window before crediting savings.'},
+   {id:'sample:profile',sourceId:'sample:profile',title:'Sample profile',source:'Synthetic annual contract record',confidence:'Sample record',claim:'Annual contract value: USD 120,000. The term-end date is not supplied.'}
+  ],
+  bookValue:{amount:120000,currency:'USD',evidenceIds:['sample:profile'],provenance:{directEvidenceIds:['sample:profile']}},
+  deals:[{name:'Core renewal',value:120000,currency:'USD',stage:'Qualified',deadlineMove:9,blocker:'No accepted night-shift coverage plan',approver:'Morgan for operating plan; contract signer unknown',attemptsRemaining:2,evidence:['sample:coverage','sample:handovers','sample:finance']}],
+  recommendation:{decision:'Protect the core renewal; defer expansion.',confidence:'Sample only',reason:'Manual fallback, not daytime performance, is the operating blocker.',evidence:['sample:coverage','sample:handovers'],unknown:'Who signs the renewal, and what evidence will Finance accept?',
+   actions:[
+    {owner:'CSM + Morgan',deal:'Core renewal',move:5,action:'Confirm the night-shift exception path and name an owner.',success:'Morgan accepts a written exception owner and an 80% pilot target.',evidenceIds:['sample:coverage','sample:handovers'],decisionConstraint:{text:'Do not expand coverage until the exception route is owned.',evidenceIds:['sample:handovers']}},
+    {owner:'Operations',deal:'Core renewal',move:6,action:'Run the corrected night-shift pilot.',success:'An operator completes one shift without falling back to the manual route and records exceptions.',evidenceIds:['sample:handovers','sample:coverage']},
+    {owner:'CSM + Taylor',deal:'Core renewal',move:7,action:'Agree Finance’s renewal evidence and confirm signing authority.',success:'Taylor confirms the comparison window and records who can sign.',evidenceIds:['sample:finance']}
+   ]
+  },
+  risks:[{title:'Night-shift adoption below target',impact:'Savings may not survive normal operations.',dueDate:'Before expansion; exact calendar date unverified',evidenceIds:['sample:coverage','sample:handovers']}],
+  gaps:[{question:'Who can sign the renewal?',why:'An operating approver is not a contract signer.',ask:'Taylor Fox',success:'Named signing authority with an exact source.',evidenceIds:['sample:finance']}],
+  timeline:[{move:2,text:'Sample telemetry recorded.',evidence:['sample:coverage']}],signals:[],notes:[]},
+ {id:'harbor',name:'Harbor Manufacturing',context:'Synthetic sparse account. An operations contact is recorded but there is not enough evidence to recommend a commercial action.',move:1,
+  stakeholders:[{name:'Jamie Soto',role:'Plant manager',authority:'Operational stakeholder; buying authority unknown',trust:'Neutral'}],
+  evidence:[],deals:[],bookValue:{amount:null,evidenceIds:[]},recommendation:null,
+  gaps:[{question:'What part of the operation is still manual?',why:'Do not infer savings or scope without a measured baseline.',ask:'Jamie Soto',success:'A measured operating baseline and its source are recorded.',evidenceIds:[]}],
+  timeline:[],signals:[],notes:[]}
 ]};
 export const fixtureAdapter={async load(){return structuredClone(fixture)}};
 export function endpointAdapter(url,{fetcher=fetch}={}){

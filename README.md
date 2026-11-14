@@ -2,7 +2,7 @@
 
 An evidence-first CRM for the customer-success manager walking into Monday. For each assigned account, see what is worth protecting, who can move it, the next three actions, what could slip, and who can close each evidence gap.
 
-**[Open the judge dashboard](https://renewal-compass-crm.tarun-aditya.chatgpt.site)** · **[Two-minute review guide](hosting/docs/REVIEW.md)** · **[Hosted implementation](hosting/README.md)**
+**[Open the judge dashboard](https://renewal-compass-crm.tarun-aditya.chatgpt.site)** · **[Two-minute review guide](hosting/docs/REVIEW.md)** · **[AI reviewer guide](hosting/docs/AI-REVIEW.md)** · **[Hosted implementation](hosting/README.md)**
 
 ### Start here
 
@@ -12,22 +12,22 @@ An evidence-first CRM for the customer-success manager walking into Monday. For 
 
 ### Run and test
 
-This Node 20+ repository has no package-install step. For a safe, local sample, serve the hosted UI on loopback:
+This Node 22+ repository has no package-install step. For a safe, local sample, serve the hosted UI on loopback:
 
 ```sh
 cd hosting
 python3 -m http.server 8314 --bind 127.0.0.1 --directory crm
 ```
 
-Open `http://127.0.0.1:8314` in sample mode. To verify the exact production adapter, stop the preview as needed and run:
+Open `http://127.0.0.1:8314` in sample mode. Northstar shows three sourced actions; Harbor deliberately has no recommendation until evidence exists. Neither is an organizer account. To verify the exact production adapter, stop the preview as needed and run:
 
 ```sh
 node scripts/build.mjs
-node --test worker/runtime.test.mjs scripts/check-public.test.mjs scripts/compare-public.test.mjs
+node --test worker/runtime.test.mjs scripts/check-public.test.mjs scripts/compare-public.test.mjs tests/sample-data.test.mjs
 node --test worker/live-loop.test.mjs
 ```
 
-From repository root, `node --test *.test.mjs` covers the alternative Node backend and its independent reasoning tests. Optional browser QA (requires Playwright with Chromium): from `hosting/`, run `node tests/manager-readiness-ui.cjs`. That test uses isolated synthetic data, not organizer credentials.
+From repository root, `node --test *.test.mjs` covers the alternative Node backend and its independent reasoning tests. Optional browser QA requires the Playwright module and compatible Chromium (`npx playwright install chromium` after installing Playwright, or set `CHROME_PATH` to a compatible executable). From `hosting/`, run the scripts in `tests/` ending in `-ui.cjs`. They use isolated synthetic data, not organizer credentials.
 
 ### Deployment boundaries
 
@@ -39,10 +39,12 @@ The root-level Node server is an alternative deployment, not the submitted servi
 
 The submitted service was verified without sign-in at 10:16 UTC on Worker revision `03e0dd2`: both books (£350,000 and €140,000), six evidence-backed decision constraints, and the same two known organizer signals reappearing in the feed. This is observed feed recovery, not two new arrivals. The production response fingerprint matched the locally built Worker and assets. Proposed checkpoints are not customer deadlines.
 
-- **Eastern Counties:** open Account brief → Exact sources. `paperwork:A/profile.json` backs the annual book. `fo_dpia_2` identifies the missing-document blocker; `srv_dataflow` is the engineering handoff. The first move is delivering the pack and getting Fatima to confirm receipt and the DPIA decision date.
-- **Aldermoor:** `paperwork:B/profile.json` backs the annual book. `ba_deputy_0` identifies continuity risk; the first move is documenting the deputy's rollout and naming a backup who can reproduce one rollout. The deputy's exact departure date remains unverified.
+- **Eastern Counties:** open Account brief → Exact sources. `paperwork:A/profile.json` backs the annual book. `fo_dpia_2` identifies the missing-document blocker; `srv_dataflow` is the engineering handoff. The worked-example move is delivering the pack and getting Fatima to confirm receipt and the DPIA decision date.
+- **Aldermoor:** `paperwork:B/profile.json` backs the annual book. `ba_deputy_0` identifies continuity risk; a sourced continuity move is documenting the deputy's rollout and naming a backup who can reproduce one rollout. The deputy's exact departure date remains unverified.
 
 To reproduce the public acceptance checks, run `node scripts/check-public.mjs --require-action-sources` from `hosting/`. For a separate synthetic end-to-end ingestion check, run `node --test worker/live-loop.test.mjs`. It rebuilds the Worker and proves a synthetic signal can change an exact sourced first action, without contacting the organizer.
+
+The worked examples are historical; current rankings can change with verified inputs. The audit verifies references and structure, not the facts or decision authority behind those references.
 
 ### The Monday handoff
 

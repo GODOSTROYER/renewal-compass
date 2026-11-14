@@ -1,0 +1,143 @@
+{
+  "mode": "fixture",
+  "_examplePurpose": "Entirely synthetic reviewer-contract example. Not organizer data, live integration proof or a completed customer action.",
+  "sourceAt": "2026-11-14T09:00:00Z",
+  "signalCheckedAt": "2026-11-14T09:01:00Z",
+  "syncStatus": "ready",
+  "syncHealth": {
+    "signalState": "fresh-empty",
+    "accountsCheckedAt": "2026-11-14T09:00:00Z",
+    "paperworkCheckedAt": {
+      "SYNTHETIC-REVIEW": "2026-11-14T09:02:00Z"
+    },
+    "lastSignalFailureAt": null
+  },
+  "accounts": [
+    {
+      "id": "SYNTHETIC-REVIEW",
+      "name": "Synthetic Orchard Services",
+      "context": "Fictional contract example only",
+      "move": 0,
+      "bookValue": {
+        "amount": 120000,
+        "currency": "USD",
+        "evidenceIds": [
+          "fixture:contract"
+        ]
+      },
+      "stakeholders": [
+        {
+          "name": "Alex Example",
+          "role": "Operations contact",
+          "trust": "Unconfirmed",
+          "authority": "Can describe workflow; signer not established"
+        }
+      ],
+      "evidence": [
+        {
+          "id": "fixture:contract",
+          "title": "Synthetic annual contract record",
+          "source": "Synthetic contract fixture",
+          "confidence": "Fixture only; not independently verified",
+          "claim": "Illustrative annual contract value is USD 120000; it is not an invoice or savings amount."
+        },
+        {
+          "id": "fixture:interview",
+          "title": "Synthetic operations report",
+          "source": "Synthetic interview fixture",
+          "confidence": "told",
+          "claim": "The operations contact reports a night-shift coverage gap and cannot identify the signer."
+        },
+        {
+          "id": "fixture:index",
+          "title": "Synthetic listed usage export",
+          "source": "Synthetic file index",
+          "confidence": "Indexed only; contents not retrieved"
+        }
+      ],
+      "deals": [
+        {
+          "name": "Synthetic renewal",
+          "stage": "Discovery",
+          "evidence": [
+            "fixture:contract",
+            "fixture:interview"
+          ]
+        }
+      ],
+      "recommendation": {
+        "decision": "Verify adoption and the buying route before advancing the synthetic renewal.",
+        "reason": "A reported coverage problem and unverified signer are separate gaps.",
+        "confidence": "Provisional fictional example",
+        "unknown": "Who signs and what coverage test is acceptable?",
+        "evidence": [
+          "fixture:contract",
+          "fixture:interview"
+        ],
+        "actions": [
+          {
+            "action": "Ask the operations contact to identify the signer and coverage acceptance criteria.",
+            "owner": "Synthetic CSM (proposed)",
+            "success": "A named signer or explicit unresolved gap, plus a measurable coverage test.",
+            "deal": "Synthetic renewal",
+            "urgency": 90,
+            "dueDate": "Before the next review; no verified customer deadline",
+            "evidenceIds": [
+              "fixture:interview"
+            ],
+            "decisionConstraint": {
+              "text": "Do not treat the operations contact as the signer.",
+              "evidenceIds": [
+                "fixture:interview"
+              ]
+            },
+            "proposedCheckpoint": {
+              "date": "2026-11-16",
+              "purpose": "Internal discovery check",
+              "basis": "Synthetic next-business-day planning target, not a customer commitment",
+              "evidenceIds": [
+                "fixture:interview"
+              ]
+            }
+          },
+          {
+            "action": "Retrieve and inspect the listed usage export before accepting the coverage claim.",
+            "owner": "Synthetic CSM + Operations (proposed)",
+            "success": "Account-local telemetry is reviewed, or the missing-file gap remains explicit.",
+            "deal": "Synthetic renewal",
+            "urgency": 70,
+            "dueDate": "Before relying on the usage claim",
+            "evidenceIds": [
+              "fixture:index"
+            ]
+          },
+          {
+            "action": "Confirm renewal mechanism with the contract owner, without substituting invoice or modeled savings values.",
+            "owner": "Synthetic CSM + Finance (proposed)",
+            "success": "A linked contractual provision and identified owner, or an explicit contract gap.",
+            "deal": "Synthetic renewal",
+            "urgency": 40,
+            "dueDate": "Before a commercial commitment",
+            "evidenceIds": [
+              "fixture:contract"
+            ]
+          }
+        ]
+      },
+      "gaps": [
+        {
+          "question": "Who pays and signs?",
+          "why": "Operational title does not establish buying authority.",
+          "ask": "Synthetic CSM to request an introduction",
+          "evidenceIds": [
+            "fixture:interview"
+          ]
+        }
+      ],
+      "signals": [],
+      "notes": [],
+      "timeline": [],
+      "risks": []
+    }
+  ]
+}

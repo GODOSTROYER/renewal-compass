@@ -69,7 +69,7 @@ function actionCard(account,action,index){
  if(calendarDate(checkpoint?.date)&&checkpoint?.purpose&&checkpoint?.basis)body.append(add(el('div',null,'proposed-checkpoint'),el('span','Proposed CRM checkpoint · '+checkpoint.date,'timing-label'),el('p',checkpoint.purpose),metadata('Basis',checkpoint.basis),el('p','Planning proposal, not a customer-agreed deadline. Separate from organizer scenario dates.','metadata'),links(validSources(account,checkpoint.evidenceIds))));
  if(action.origin)body.append(metadata('Basis',action.origin));
  body.append(sources.length?add(el('div',null,'action-provenance'),el('span','Action sources','meta-label'),links(sources)):el('p','No exact source is attached to this action. Validate it before committing.','source-missing'));
- const row=add(el('li',null,'action-item'),el('span',String(index+1).padStart(2,'0'),'action-number'),body);row.id='review-action-'+index;return row;
+ const row=add(el('li',null,'action-item'),el('span',String(index+1).padStart(2,'0'),'action-number'),body);row.id='review-action-'+index;row.tabIndex=-1;return row;
 }
 function snapshotTimestamp(value){
  return typeof value==='string'&&/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(value)&&calendarDate(value.slice(0,10))&&!Number.isNaN(Date.parse(value))?new Date(value).toISOString():null;
@@ -121,6 +121,17 @@ function actionObservation(account){
  if(now.ids.length)panel.append(add(el('div',null,'observation-delta'),el('span','Current exact action sources: '),links(now.ids)));
  return panel;
 }
+function mobileFirstMove(account){
+ const action=prioritizedActions(account)[0];if(!action?.action)return null;
+ const ids=validSources(account,action.evidenceIds),source=(action.evidenceIds??[]).map(id=>(account.evidence??[]).find(x=>x.id===id)).find(x=>x&&ids.includes(x.id)&&typeof x.claim==='string'&&x.claim.trim()),timing=actionTiming(account,action);
+ const lead=add(el('section',null,'mobile-first-move'),el('span','FIRST MOVE · CURRENT CRM ORDER','mobile-move-label'),el('h3',action.action,'mobile-move-action'));lead.setAttribute('aria-label','First move summary');
+ lead.append(metadata('Owner',action.decisionOwner??action.owner??'Not assigned'),metadata(timing.verified?'Sourced deadline':'Recorded timing',timing.text));
+ if(!timing.verified)lead.append(el('p','Calendar deadline unverified. Confirm with the owner before committing.','mobile-move-safety'));
+ const trust=handoffTrust(account);if(trust.warning)lead.append(el('p',trust.message,'mobile-move-safety'));
+ if(source){const verified=/^verified\b/i.test(String(source.confidence??'')),scenario=String(source.id).startsWith('signal:');lead.append(add(el('div',null,'mobile-move-why'),el('strong','Why · '+(scenario?'scenario ':'')+(verified?'source marked verified':'source reports')),el('p',source.claim),links([source.id])));}
+ else lead.append(add(el('div',null,'mobile-move-why'),el('strong','Why · verification needed'),el('p',action.origin?'Recorded basis: '+action.origin+'. No exact claim-level source is linked here.':'No exact action rationale is linked. Confirm the reason with the owner.')));
+ const nav=el('div',null,'mobile-move-links'),review=el('a','Review action','mobile-move-link'),handoff=el('a','Review handoff','mobile-move-link');review.href='#review-action-0';handoff.href='#next-move-handoff';nav.append(review,handoff);lead.append(nav);return lead;
+}
 function handoffText(account,action,constraintText){
  const timing=actionTiming(account,action),sourceIds=validSources(account,action.evidenceIds),checkpoint=action.proposedCheckpoint;
  // Handoffs contain planned work, never evidence excerpts, email addresses or phone numbers.
@@ -138,7 +149,7 @@ function handoffText(account,action,constraintText){
 }
 function handoffControl(account,action,constraintText){
  const control=el('div',null,'handoff-control'),button=el('button','Copy next move','handoff-button'),status=el('p',null,'handoff-status'),preview=el('details',null,'handoff-preview'),field=el('textarea');
- button.type='button';status.setAttribute('role','status');field.readOnly=true;field.rows=10;field.setAttribute('aria-label','Read-only next move handoff');preview.hidden=true;preview.append(el('summary','View handoff text'),field);
+ control.id='next-move-handoff';control.tabIndex=-1; button.type='button';status.setAttribute('role','status');field.readOnly=true;field.rows=10;field.setAttribute('aria-label','Read-only next move handoff');preview.hidden=true;preview.append(el('summary','View handoff text'),field);
  button.addEventListener('click',async()=>{const text=handoffText(account,action,constraintText);field.value=text;preview.hidden=false;button.disabled=true;try{if(!navigator.clipboard?.writeText)throw Error('Clipboard unavailable');await navigator.clipboard.writeText(text);status.textContent='Copied. Nothing sent or scheduled.';preview.open=false;}catch{status.textContent='Clipboard unavailable. Select and copy the text below.';preview.open=true;field.focus();field.select();}finally{button.disabled=false;}});
  const trust=handoffTrust(account);control.append(button);if(trust.warning)control.append(el('p','Evidence caution included in handoff','handoff-trust'));control.append(status,preview);return control;
 }
@@ -199,7 +210,7 @@ function render(){
  const a=snapshot.accounts.find(x=>x.id===current),out=$('workspace');out.replaceChildren();
  if(!a){connectionState('No accounts in this snapshot.','The connection returned no account records. No recommendation has been generated.');return}
  if(!accountViewBaselines.has(a.id)||accountViewBaselines.get(a.id).accountName!==a.name)accountViewBaselines.set(a.id,actionViewRecord(a));
- out.append(add(el('div',null,'account-heading'),add(el('div',null,'title'),el('h2',a.name),el('span',Number.isInteger(a.move)?'Account move '+a.move:'Move unknown','badge')),el('p',a.context??'','account-context')));
+ const heading=add(el('div',null,'account-heading'),add(el('div',null,'title'),el('h2',a.name),el('span',Number.isInteger(a.move)?'Account move '+a.move:'Move unknown','badge'))),mobileLead=mobileFirstMove(a);if(mobileLead)heading.append(mobileLead);heading.append(el('p',a.context??'','account-context'));out.append(heading);
  const overview=card('Account brief',true);overview.classList.add('account-brief');
  const metrics=el('dl',null,'brief');
  const row=(label,value)=>metrics.append(add(el('div',null,'brief-field'+(label==='Decision'?' decision':'')),el('dt',label),typeof value==='string'?el('dd',value):add(el('dd'),value)));

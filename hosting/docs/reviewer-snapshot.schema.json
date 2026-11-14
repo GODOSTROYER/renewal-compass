@@ -1,0 +1,387 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:renewal-compass:reviewer-snapshot:1",
+  "title": "Renewal Compass reviewer snapshot contract v1",
+  "description": "Shape only. Schema validity does not verify factual claims, authority, source completeness, freshness, release authenticity or action completion.",
+  "type": "object",
+  "properties": {
+    "mode": {
+      "enum": [
+        "fixture",
+        "discovery",
+        "live"
+      ]
+    },
+    "releaseFingerprint": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "sourceAt": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "signalCheckedAt": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "syncStatus": {
+      "type": "string",
+      "description": "Reported synchronization status; unknown values must not be treated as ready."
+    },
+    "syncHealth": {
+      "type": "object",
+      "properties": {
+        "signalState": {
+          "type": "string"
+        },
+        "accountsCheckedAt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "paperworkCheckedAt": {
+          "type": "object",
+          "additionalProperties": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        },
+        "lastSignalFailureAt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "signalRetryAt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        }
+      },
+      "additionalProperties": true
+    },
+    "accounts": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/account"
+      }
+    }
+  },
+  "required": [
+    "mode",
+    "accounts"
+  ],
+  "additionalProperties": true,
+  "$defs": {
+    "evidence": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sourceId": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        },
+        "confidence": {
+          "type": "string"
+        },
+        "claim": {
+          "type": "string"
+        },
+        "move": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "additionalProperties": true
+    },
+    "checkpoint": {
+      "type": "object",
+      "properties": {
+        "date": {
+          "type": "string",
+          "format": "date"
+        },
+        "purpose": {
+          "type": "string"
+        },
+        "basis": {
+          "type": "string",
+          "minLength": 1
+        },
+        "evidenceIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "date",
+        "basis"
+      ],
+      "additionalProperties": true
+    },
+    "action": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string",
+          "minLength": 1
+        },
+        "owner": {
+          "type": "string",
+          "minLength": 1
+        },
+        "success": {
+          "type": "string",
+          "minLength": 1
+        },
+        "deal": {
+          "type": "string"
+        },
+        "move": {
+          "type": "integer"
+        },
+        "urgency": {
+          "type": "number"
+        },
+        "dueDate": {
+          "type": "string"
+        },
+        "evidenceIds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "origin": {
+          "type": "string"
+        },
+        "decisionConstraint": {
+          "type": "object",
+          "properties": {
+            "text": {
+              "type": "string"
+            },
+            "evidenceIds": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              },
+              "uniqueItems": true
+            }
+          },
+          "required": [
+            "text",
+            "evidenceIds"
+          ],
+          "additionalProperties": true
+        },
+        "proposedCheckpoint": {
+          "$ref": "#/$defs/checkpoint"
+        }
+      },
+      "required": [
+        "action",
+        "owner",
+        "success"
+      ],
+      "additionalProperties": true
+    },
+    "account": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "context": {
+          "type": "string"
+        },
+        "move": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "bookValue": {
+          "type": "object",
+          "properties": {
+            "amount": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "currency": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "pattern": "^[A-Z]{3}$"
+            },
+            "evidenceIds": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              },
+              "uniqueItems": true
+            }
+          },
+          "additionalProperties": true
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/evidence"
+          }
+        },
+        "stakeholders": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "role": {
+                "type": "string"
+              },
+              "trust": {
+                "type": "string"
+              },
+              "authority": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "name"
+            ],
+            "additionalProperties": true
+          }
+        },
+        "deals": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "timeline": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "signals": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "risks": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "gaps": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "notes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "body"
+                  ]
+                },
+                {
+                  "required": [
+                    "text"
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        "recommendation": {
+          "type": "object",
+          "properties": {
+            "decision": {
+              "type": "string"
+            },
+            "reason": {
+              "type": "string"
+            },
+            "confidence": {
+              "type": "string"
+            },
+            "unknown": {
+              "type": "string"
+            },
+            "evidence": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              },
+              "uniqueItems": true
+            },
+            "actions": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/action"
+              }
+            }
+          },
+          "additionalProperties": true
+        }
+      },
+      "required": [
+        "id",
+        "name"
+      ],
+      "additionalProperties": true
+    }
+  }
+}

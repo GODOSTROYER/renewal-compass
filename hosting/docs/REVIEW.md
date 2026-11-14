@@ -1,5 +1,7 @@
 # Reviewer proof path
 
+For machine-readable review, use the [AI reviewer contract and synthetic example](AI-REVIEW.md). Reference checks establish structure, not factual verification or confirmed authority.
+
 ## Two-minute evaluation
 
 1. Open https://renewal-compass-crm.tarun-aditya.chatgpt.site. Check whether the board identifies sample data or organizer-backed data before interpreting counts.
@@ -40,7 +42,7 @@ This repository and deployment are review artifacts. Neither publishing source n
 
 ## One-command public check
 
-From `hosting/`, run `node scripts/check-public.mjs --require-action-sources`. This checks the existing public URL once without a login, checks in-account sources on reported moves, and enforces the public note-body boundary. The roster is dynamic: add `--min-accounts=3` only when at least three accounts are expected. A sparse newly assigned account is reported separately as provisional, not as a fully verified brief. With `--require-action-sources`, an account without any sourced move fails the check. The output identifies stale, successfully empty, or signal-present data without treating any of them as proof that a new event arrived. It never calls the organizer directly or writes a note.
+From `hosting/`, run `node scripts/check-public.mjs --require-action-sources`. This checks the existing public URL once without a login, checks in-account references on the ranked first three moves, and enforces the public note-body boundary. The roster is dynamic: add `--min-accounts=3` only when at least three accounts are expected. A sparse newly assigned account is reported separately as provisional, not structurally complete. With `--require-action-sources`, an account without any referenced move fails the check. A complete reference structure does not verify facts, buying authority, or evidence contents. The versioned structural report separately counts claim-bearing and index-only referenced records and reports freshness clocks without treating them as proof that a new event arrived. It never calls the organizer directly or writes a note.
 
 ## Human handoff
 
