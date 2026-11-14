@@ -79,7 +79,9 @@ function handoffText(account,action,constraintText){
  lines.push(['Done when',action.success]);
  const result=action.verificationResult,resultIds=validSources(account,result?.evidenceIds).filter(id=>sourceIds.includes(id));
  lines.push(['Verification result',result?.text&&resultIds.length?result.text:'Not recorded; not marked complete.']);
- return lines.map(([label,value])=>label+': '+clean(value)).join('\n')+'\nExact source IDs: '+(sourceIds.length?sourceIds.join(', '):'None linked; source verification required.')+'\nThis is a handoff draft. Nothing has been sent or scheduled.';
+ const savedTime=value=>typeof value==='string'&&/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(value)&&calendarDate(value.slice(0,10))&&!Number.isNaN(Date.parse(value))?new Date(value).toISOString():'Unknown (not recorded as a valid timestamp)';
+ lines.push(['Saved snapshot source time',savedTime(snapshot?.sourceAt)],['Saved snapshot signal check',savedTime(snapshot?.signalCheckedAt)]);
+ return lines.map(([label,value])=>label+': '+clean(value)).join('\n')+'\nExact source IDs: '+(sourceIds.length?sourceIds.join(', '):'None linked; source verification required.')+'\nRecheck the latest evidence before committing.\nThis is a handoff draft. Nothing has been sent or scheduled.';
 }
 function handoffControl(account,action,constraintText){
  const control=el('div',null,'handoff-control'),button=el('button','Copy next move','handoff-button'),status=el('p',null,'handoff-status'),preview=el('details',null,'handoff-preview'),field=el('textarea');

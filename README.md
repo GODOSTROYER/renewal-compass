@@ -36,7 +36,7 @@ The root-level Node server is an alternative deployment, not the submitted servi
 
 ### Judge proof check · 14 November 2026
 
-The submitted service was verified without sign-in at 10:12 UTC on Worker revision `266165d`: both books (£350,000 and €140,000), six evidence-backed decision constraints, and the same two known organizer signals reappearing in the feed. This is observed feed recovery, not two new arrivals. The production response fingerprint matched the locally built Worker and assets. Proposed checkpoints are not customer deadlines.
+The submitted service was verified without sign-in at 10:16 UTC on Worker revision `03e0dd2`: both books (£350,000 and €140,000), six evidence-backed decision constraints, and the same two known organizer signals reappearing in the feed. This is observed feed recovery, not two new arrivals. The production response fingerprint matched the locally built Worker and assets. Proposed checkpoints are not customer deadlines.
 
 - **Eastern Counties:** open Account brief → Exact sources. `paperwork:A/profile.json` backs the annual book. `fo_dpia_2` identifies the missing-document blocker; `srv_dataflow` is the engineering handoff. The first move is delivering the pack and getting Fatima to confirm receipt and the DPIA decision date.
 - **Aldermoor:** `paperwork:B/profile.json` backs the annual book. `ba_deputy_0` identifies continuity risk; the first move is documenting the deputy's rollout and naming a backup who can reproduce one rollout. The deputy's exact departure date remains unverified.
@@ -50,3 +50,5 @@ Select either account and use **Copy next move** to take the verification task, 
 The [judge-window refresh workflow](.github/workflows/questathon-refresh.yml) is configured to make a single unauthenticated request on a best-effort cadence, ending with the judging window. A committed workflow alone does not establish successful scheduling, consistent cadence, or event delivery.
 
 Risk cards show the next move only when the account’s evidence uniquely supports the match. Exact duplicates are combined without merging distinct clocks, causes or actions. The same rule is tested on an unseen synthetic account.
+
+A copied action includes both available snapshot timestamps and asks the next owner to recheck before committing. The temporary independent judging check and GitHub workflow are bounded to the judging window. After the window, use **Refresh data** or open the dashboard to request the next eligible check; there is no native always-on scheduler.
