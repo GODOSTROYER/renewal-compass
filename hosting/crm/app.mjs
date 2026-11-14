@@ -2,7 +2,10 @@ import {fixtureAdapter,discoveryAdapter,endpointAdapter,remaining,reviewAccount,
 const $=id=>document.getElementById(id);
 const el=(tag,text,cls)=>{const n=document.createElement(tag);if(text!=null)n.textContent=String(text);if(cls)n.className=cls;return n};
 const add=(parent,...children)=>{for(const child of children)parent.append(child);return parent};
-const card=(name,full=false)=>add(el('article',null,'card'+(full?' full':'')),el('h3',name));
+const iconPaths={compass:'m12 3 3 6 6 3-6 3-3 6-3-6-6-3 6-3 3-6Z',brief:'M7 3h10a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Zm2 5h6M9 12h6M9 16h4',actions:'m13 2-9 12h7l-1 8 10-13h-7l1-7Z',people:'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M16 3a4 4 0 0 1 0 8M22 21v-2a4 4 0 0 0-3-3.87M13 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0Z',risk:'m10.3 3.9-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.7-3.1l-8-14a2 2 0 0 0-3.4 0ZM12 9v4m0 4h.01',gap:'M9.1 9a3 3 0 0 1 5.8 1c0 2-3 2-3 4m.1 3h.01M22 12A10 10 0 1 1 2 12a10 10 0 0 1 20 0Z',evidence:'M10 13a5 5 0 0 0 7 .2l3-3a5 5 0 0 0-7-7l-1.7 1.7M14 11a5 5 0 0 0-7-.2l-3 3a5 5 0 0 0 7 7l1.7-1.7',signal:'M2 12h4l3-8 6 16 3-8h4',check:'m5 12 4 4L19 6',clock:'M12 8v5l3 2M22 12A10 10 0 1 1 2 12a10 10 0 0 1 20 0Z',building:'M4 21V5h12v16M8 9h.01M12 9h.01M8 13h.01M12 13h.01M8 17h.01M12 17h.01M16 10h4v11M2 21h20'};
+function icon(name,cls='ui-icon'){const n=document.createElementNS('http://www.w3.org/2000/svg','svg');n.setAttribute('viewBox','0 0 24 24');n.setAttribute('aria-hidden','true');n.setAttribute('class',cls);const p=document.createElementNS('http://www.w3.org/2000/svg','path');p.setAttribute('d',iconPaths[name]??iconPaths.compass);n.append(p);return n;}
+const sectionIcons={'Account brief':'brief','Top actions':'actions','Deals & buying groups':'people','Timed risks':'risk','Missing facts':'gap','Signals and notes':'signal','Evidence ledger':'evidence','Account contacts':'people','Account activity':'clock','Decision quality checks':'check'};
+const card=(name,full=false)=>add(el('article',null,'card'+(full?' full':'')),add(el('h3'),add(el('span',null,'section-icon'),icon(sectionIcons[name])),el('span',name)));
 const empty=(n,msg)=>add(n,el('p',msg,'metadata'));
 function list(parent,items,render,emptyText){if(!items?.length)return empty(parent,emptyText);const ul=el(parent.id===blockId('actions')?'ol':'ul');items.forEach((item,index)=>ul.append(render(item,index)));return add(parent,ul)}
 function links(ids){const n=el('span',null,'source-links');for(const id of ids??[]){const a=el('a',id,'ref');a.href='#evidence-'+encodeURIComponent(id);a.setAttribute('aria-label','View evidence '+id);n.append(a)}return n}
@@ -13,7 +16,7 @@ const adapter=cfg.normalizedEndpoint?endpointAdapter(cfg.normalizedEndpoint):new
 let current,snapshot,started=false;
 const blockId=s=>'review-'+s;
 function jump(label,id){
- const a=el('a',label,'jump');a.setAttribute('aria-label',label);a.href='#'+blockId(id);const icon=document.createElementNS('http://www.w3.org/2000/svg','svg');icon.setAttribute('viewBox','0 0 16 16');icon.setAttribute('aria-hidden','true');const path=document.createElementNS('http://www.w3.org/2000/svg','path');path.setAttribute('d','M3 13 13 3M4 3h9v9');icon.append(path);a.append(icon);return a;
+ const a=add(el('a',null,'jump'),icon(({deals:'people',actions:'actions',risks:'risk',gaps:'gap',evidence:'evidence'})[id],'route-icon'),el('span',label));a.dataset.section=id;a.setAttribute('aria-label',label);a.href='#'+blockId(id);const arrow=document.createElementNS('http://www.w3.org/2000/svg','svg');arrow.setAttribute('viewBox','0 0 16 16');arrow.setAttribute('class','jump-arrow');arrow.setAttribute('aria-hidden','true');const path=document.createElementNS('http://www.w3.org/2000/svg','path');path.setAttribute('d','M3 13 13 3M4 3h9v9');arrow.append(path);a.append(arrow);return a;
 }
 function sourceTime(v){
  if(!v)return 'not recorded';
@@ -22,7 +25,7 @@ function sourceTime(v){
 }
 function render(){
  $('accounts').replaceChildren();
- for(const a of snapshot.accounts){let b=add(el('button'),el('span',a.name),el('span',String(a.deals?.length??0)+((a.deals?.length??0)===1?' deal':' deals'),'account-count'));b.dataset.accountId=a.id;b.setAttribute('aria-pressed',a.id===current);b.addEventListener('click',()=>{current=a.id;render();[...$('accounts').children].find(n=>n.dataset.accountId===a.id)?.focus()});$('accounts').append(b)}
+ for(const a of snapshot.accounts){let b=add(el('button'),icon('building','account-icon'),el('span',a.name),el('span',String(a.deals?.length??0)+((a.deals?.length??0)===1?' deal':' deals'),'account-count'));b.dataset.accountId=a.id;b.setAttribute('aria-pressed',a.id===current);b.addEventListener('click',()=>{current=a.id;render();[...$('accounts').children].find(n=>n.dataset.accountId===a.id)?.focus()});$('accounts').append(b)}
  const a=snapshot.accounts.find(x=>x.id===current),out=$('workspace');out.replaceChildren();
  if(!a){connectionState('No accounts in this snapshot.','The connection returned no account records. No recommendation has been generated.');return}
  out.append(add(el('div',null,'account-heading'),add(el('div',null,'title'),el('h2',a.name),el('span',Number.isInteger(a.move)?'Account move '+a.move:'Move unknown','badge')),el('p',a.context??'','account-context')));
@@ -47,6 +50,7 @@ function render(){
  deals.id=blockId('deals');evidence.id=blockId('evidence');
  list(deals,a.deals,x=>{
   const n=add(el('li',null,'deal-item'),add(el('div',null,'deal-summary'),el('strong',x.name??'Deal','deal-name'),metadata('Stage',x.stage),metadata('Value',money(x.value,x.currency)),metadata('Tries left',x.attemptsRemaining)),add(el('div',null,'deal-facts'),metadata('Deadline',x.deadlineText??remaining(a.move,x.deadlineMove)),metadata('Blocker',x.blocker),metadata('Authority',x.approver)),links(x.evidence));
+  n.dataset.stage=String(x.stage??'unknown').toLowerCase();
   if(x.roles?.length){
    const group=el('details');group.open=true;group.append(el('summary','Deal stakeholders and trust'));
    list(group,x.roles,y=>add(el('li'),el('strong',y.role??'Role unknown'),metadata('Person',y.name),metadata('Trust',y.trust),y.rationale?el('p',y.rationale,'metadata'):'',links(y.evidenceIds)),'Deal roles are not verified.');n.append(group);
@@ -64,7 +68,7 @@ function render(){
     set.append(el('legend','Select exact sources for this draft'));
     const update=()=>{
      const next=proposalReadiness(x,a.evidence??[],boxes.filter(z=>z.checked).map(z=>z.value));
-     readout.textContent=next.state==='ready'?'Checklist satisfied. Nothing was sent.':'Not ready. Missing: '+(next.missing.join(', ')||'none')+'; extra: '+(next.irrelevant.join(', ')||'none')+'.';
+     readout.dataset.readiness=next.state;readout.textContent=next.state==='ready'?'Checklist satisfied. Nothing was sent.':'Not ready. Missing: '+(next.missing.join(', ')||'none')+'; extra: '+(next.irrelevant.join(', ')||'none')+'.';
     };
     for(const e of a.evidence??[]){if(!e.sourceId)continue;const label=el('label',null,'source-choice'),input=el('input');input.type='checkbox';input.value=e.sourceId;input.addEventListener('change',update);boxes.push(input);label.append(input,' '+e.title+' ['+e.sourceId+']');set.append(label)}
     review.append(set,readout);update();
@@ -80,6 +84,8 @@ function render(){
  list(gaps,a.gaps,x=>add(el('li'),el('strong',x.question),metadata('Why it matters',x.why),metadata('Ask',x.ask),links(x.evidenceIds)),'No explicit discovery gaps recorded.');
  list(notes,[...(a.signals??[]),...(a.notes??[])],x=>add(el('li'),el('strong',x.title??x.kind??'Signal'),el('p',x.text),metadata('Reported',x.at),x.arrivedAt?metadata('Received',x.arrivedAt):'',links(x.evidenceIds)),'No verified live signals or notes loaded.');
  out.append(add(grid,plan,deals,risks,gaps,notes,evidence,stake,timeline,quality));
+ out.querySelectorAll('.grid>.card').forEach((n,i)=>n.style.setProperty('--reveal-delay',Math.min(i,5)*45+'ms'));
+ document.title=a.name+' · Renewal Compass';
 }
 if(cfg.normalizedEndpoint&&new URLSearchParams(location.search).get('operator')==='1'){
  const station=add(el('details',null,'card'),el('summary','Operator only: write organizer note')),form=el('form'),result=el('p',null,'metadata');
