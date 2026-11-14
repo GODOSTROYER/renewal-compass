@@ -30,6 +30,33 @@ function actionTiming(account,action){
  const verified=timing.kind==='sourced-date'&&calendarDate(timing.date)&&validSources(account,timing.evidenceIds).length;
  return {text:verified?timing.date:raw,label:verified?'Sourced deadline':timing.kind==='proposed'?'Proposed target':'Timing recorded',verified:Boolean(verified),verifyWith:timing.verifyWith??action.owner??'Unassigned; manager to name an owner'};
 }
+// Collapse only exact equivalent records with a fully known evidence scope.
+// Comparing every field keeps distinct dates, triggers, deals and future metadata separate.
+function riskRecords(account){
+ const canonical=value=>Array.isArray(value)?value.map(canonical):value&&typeof value==='object'?Object.fromEntries(Object.keys(value).sort().map(key=>[key,canonical(value[key])])):value;
+ const groups=[],seen=new Map();
+ for(const risk of account.risks??[]){
+  const ids=Array.isArray(risk.evidenceIds)?[...new Set(risk.evidenceIds)]:[],known=validSources(account,ids),title=typeof risk.title==='string'?risk.title.normalize('NFC').trim().replace(/\s+/g,' '):'';
+  const key=title&&ids.length&&known.length===ids.length?JSON.stringify(canonical({...risk,title,evidenceIds:[...ids].sort()})):null;
+  if(key&&seen.has(key)){seen.get(key).count++;continue;}
+  const entry={risk,count:1};groups.push(entry);if(key)seen.set(key,entry);
+ }
+ return groups;
+}
+function riskCard(account,{risk,count}){
+ const row=add(el('li',null,'risk-item'),el('strong',risk.title),metadata('Timing',risk.dueDate??remaining(account.move,risk.dueMove)),metadata('Impact',risk.impact),links(risk.evidenceIds));
+ const trigger=risk.trigger??risk.riskTrigger;if(typeof trigger==='string')row.append(metadata('Trigger',trigger));else if(typeof trigger?.text==='string')row.append(metadata('Trigger',trigger.text));if(risk.deal)row.append(metadata('Deal',risk.deal));
+ if(count>1)row.append(el('p',count+' identical risk records shown once · same evidence and timing','risk-duplicate-note'));
+ const sources=new Set(validSources(account,risk.evidenceIds));
+ const matches=prioritizedActions(account).map((action,index)=>({action,index,shared:validSources(account,action.evidenceIds).filter(id=>sources.has(id))})).filter(({action,shared})=>shared.length&&(!risk.deal||!action.deal||risk.deal===action.deal));
+ if(matches.length===1){
+  const {action,index,shared}=matches[0],next=add(el('div',null,'risk-next-move'),el('span','Evidence-linked next move','risk-next-label'),el('p',action.action??'Action text not recorded'),metadata('Owner',action.owner??'Not assigned'),links(shared));
+  // The relationship is evidence overlap, not a verified resolution or an inferred owner.
+  if(index<3){const jump=el('a','Review action '+(index+1),'risk-action-link');jump.href='#review-action-'+index;next.append(jump);}
+  row.append(next);
+ }else if(matches.length>1)row.append(el('p','Multiple next moves share this evidence. Confirm the risk owner; no single action is assigned here.','risk-link-uncertain'));
+ return row;
+}
 function actionCard(account,action,index){
  const timing=actionTiming(account,action),sources=validSources(account,action.evidenceIds),sourceSet=new Set(sources);
  const risk=(account.risks??[]).find(x=>(x.evidenceIds??[]).some(id=>sourceSet.has(id)));
@@ -41,7 +68,7 @@ function actionCard(account,action,index){
  if(calendarDate(checkpoint?.date)&&checkpoint?.purpose&&checkpoint?.basis)body.append(add(el('div',null,'proposed-checkpoint'),el('span','Proposed CRM checkpoint · '+checkpoint.date,'timing-label'),el('p',checkpoint.purpose),metadata('Basis',checkpoint.basis),el('p','Planning proposal, not a customer-agreed deadline. Separate from organizer scenario dates.','metadata'),links(validSources(account,checkpoint.evidenceIds))));
  if(action.origin)body.append(metadata('Basis',action.origin));
  body.append(sources.length?add(el('div',null,'action-provenance'),el('span','Action sources','meta-label'),links(sources)):el('p','No exact source is attached to this action. Validate it before committing.','source-missing'));
- return add(el('li',null,'action-item'),el('span',String(index+1).padStart(2,'0'),'action-number'),body);
+ const row=add(el('li',null,'action-item'),el('span',String(index+1).padStart(2,'0'),'action-number'),body);row.id='review-action-'+index;return row;
 }
 function handoffText(account,action,constraintText){
  const timing=actionTiming(account,action),sourceIds=validSources(account,action.evidenceIds),checkpoint=action.proposedCheckpoint;
@@ -170,7 +197,7 @@ function render(){
  list(timeline,[...(a.timeline??[])].sort((a,b)=>(b.move??0)-(a.move??0)),x=>add(el('li'),el('strong',Number.isInteger(x.move)?'Move '+x.move:'Move not recorded'),el('p',x.text??''),links(x.evidence)),'No activity recorded.');
  const risks=card('Timed risks'),gaps=card('Missing facts'),notes=card('Signals and notes',true);notes.id=blockId('signals');stake.classList.add('contacts');timeline.classList.add('timeline');quality.classList.add('quality');
  risks.id=blockId('risks');gaps.id=blockId('gaps');
- list(risks,a.risks,x=>add(el('li'),el('strong',x.title),metadata('Timing',x.dueDate??remaining(a.move,x.dueMove)),metadata('Impact',x.impact),links(x.evidenceIds)),'No sourced timed risks recorded.');
+ list(risks,riskRecords(a),x=>riskCard(a,x),'No sourced timed risks recorded.');
  const timingGaps=pendingTiming.filter((x,i,all)=>all.findIndex(y=>(y.deal??y.action)===(x.deal??x.action))===i).map(x=>({question:'What is the exact calendar deadline for '+(x.deal??x.action)+'?',why:'Recorded timing: '+actionTiming(a,x).text+'. A relative window cannot be treated as a verified date.',ask:actionTiming(a,x).verifyWith,success:'Owner records an exact date, confirms it with the decision-route contact and attaches the source. Until then, keep the deadline unverified.',evidenceIds:validSources(a,x.evidenceIds)}));
  list(gaps,[...timingGaps,...(a.gaps??[])],x=>add(el('li'),el('strong',x.question),metadata('Why it matters',x.why),metadata('Confirm with',x.ask??'Unassigned; manager to name an owner'),metadata('Closure test',x.success??'Record the answer and its exact source before treating this gap as resolved'),links(x.evidenceIds)),'No explicit discovery gaps recorded.');
  if(a.signals?.length)notes.append(el('p','Organizer scenario dates are separate from feed arrival, local observations and internal proposed checkpoints.','observation-caveat'));

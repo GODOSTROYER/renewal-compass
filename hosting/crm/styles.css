@@ -35,3 +35,6 @@ main{max-width:1520px;padding-inline:32px}#accounts{display:flex;align-items:cen
 /* Expanded handoff is a full-width reading surface, never a squeezed toolbar. */
 .proof-heading>div:first-child{min-width:0}.proof-heading:has(.handoff-preview[open]){flex-wrap:wrap}.proof-heading:has(.handoff-preview[open])>.handoff-control{flex:1 0 100%;min-width:0;width:100%;text-align:left}.proof-heading:has(.handoff-preview[open]) .handoff-preview{width:100%}
 @media(max-width:760px){.proof-heading>div:first-child{flex:1 0 100%}.proof-heading>.handoff-control{flex:0 1 100%}}
+
+/* Risk-to-action tracing stays subordinate to the source record. */
+.risk-next-move{margin-top:13px;padding:11px 13px;border-left:2px solid #91cbb33d;border-radius:0 8px 8px 0;background:#8bbba809}.risk-next-label{display:block;color:#9dd6c6;font-size:10px;font-weight:600;margin-bottom:5px}.risk-next-move>p:not(.metadata){font-size:11px;line-height:1.7;color:#c5d0da}.risk-next-move>.metadata{font-size:10px}.risk-next-move>.source-links{margin-top:6px}.risk-action-link{display:block;width:fit-content;font-size:10px;margin-top:8px;text-underline-offset:3px}.risk-duplicate-note,.risk-link-uncertain{font-size:10px!important;line-height:1.7!important;color:#aaa7ba!important}.risk-link-uncertain{border-top:1px solid #ffffff0b;padding-top:10px}
