@@ -1,5 +1,5 @@
 # Renewal Compass
-Evidence-backed renewal CRM for Account Quest. Run with Node 20 or newer; no package installation required. Start the server with `node server.mjs`, then open http://127.0.0.1:8314. Run `node --test *.test.mjs` to verify transport, source validation, unseen accounts, denied public writes and live-event reprioritization.
+Renewal Compass is a customer success CRM for evidence-backed renewal planning. Run with Node 20 or newer; no package installation required. Start the server with `node server.mjs`, then open http://127.0.0.1:8314. Run `node --test *.test.mjs` to verify transport, source validation, unseen accounts, denied public writes and live-event reprioritization.
 
 The organizer connection is configured only on the server. Without an authorized token and game data, use a separate local static preview of `index.html` to explore fictional sample mode. Neither sample mode nor the static account export is live or submission-ready.
 
