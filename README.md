@@ -12,3 +12,7 @@ Run `node server.mjs` (Node 20+), with `AQ_TOKEN` set privately in server enviro
 ### Operator note and reviewer demo
 
 On the configured backend, open `/?operator=1` to reveal an operator-only form. An explicit submit and confirmation send one permitted `write_note`; use the separate app operator key, never the organizer token. The key is not persisted in browser storage. During cooldown the response shows how long to wait; there is no automatic mutation retry. Confirmed notes from this deployment appear on the relevant account. Never put confidential material in a note if the deployment's normalized board is readable to reviewers. Failed signal sync or signal data over three minutes old is labeled stale; an initial organizer check is shown as pending, not claimed.
+
+### Hosted adapter
+
+The deployed Worker and its tests are under [hosting/](hosting/README.md). The Node server above is an alternative for a host with a persistent filesystem.
