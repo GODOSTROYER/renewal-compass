@@ -87,6 +87,25 @@ async function cache(db){
  }
  return valid;
 }
+function overlayActionEvidence(plans,raw){
+ if(!raw)return plans;
+ let addon;
+ try{addon=JSON.parse(raw);}catch{return plans;}
+ const record=x=>x&&typeof x==='object'&&!Array.isArray(x);
+ if(!record(addon))return plans;
+ for(const id of ['A','B']){
+  const scoped=addon[id], plan=plans[id], actions=plan?.recommendation?.actions;
+  if(!record(scoped)||typeof scoped.accountName!=='string'||!scoped.accountName
+   ||scoped.accountName!==plan?.accountName||!record(scoped.actions)||!Array.isArray(actions))continue;
+  plans[id]={...plan,recommendation:{...plan.recommendation,actions:actions.map(action=>{
+   if(typeof action?.action!=='string'||!Object.hasOwn(scoped.actions,action.action))return action;
+   const extra=scoped.actions[action.action];
+   if(!Array.isArray(extra)||!extra.length||!extra.every(id=>typeof id==='string'&&id.trim()===id&&id.length>0))return action;
+   return {...action,evidenceIds:[...new Set([...(Array.isArray(action.evidenceIds)?action.evidenceIds:[]),...extra])]};
+  })}};
+ }
+ return plans;
+}
 function privatePlans(env){
  const parsed=env.AQ_PRIVATE_PLAN?JSON.parse(env.AQ_PRIVATE_PLAN):{};
  if(!parsed||Array.isArray(parsed)||typeof parsed!=='object')throw Error('Invalid plan');
@@ -98,7 +117,7 @@ function privatePlans(env){
   const {accountName,currency,signalPolicy,deals,recommendation,gaps}=plan;
   parsed[id]={accountName,currency,signalPolicy,deals,recommendation,gaps};
  }
- return parsed;
+ return overlayActionEvidence(parsed,env.AQ_ACTION_EVIDENCE);
 }
 async function upstream(env,key,args={},upstreamFetch=(...args)=>globalThis.fetch(...args),now=Date.now()){
  const write=key==='write_note';

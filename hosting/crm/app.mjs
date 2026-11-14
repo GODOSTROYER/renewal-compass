@@ -43,6 +43,28 @@ function actionCard(account,action,index){
  body.append(sources.length?add(el('div',null,'action-provenance'),el('span','Action sources','meta-label'),links(sources)):el('p','No exact source is attached to this action. Validate it before committing.','source-missing'));
  return add(el('li',null,'action-item'),el('span',String(index+1).padStart(2,'0'),'action-number'),body);
 }
+function discoveryProof(account){
+ const action=prioritizedActions(account)[0];
+ if(!action?.action)return null;
+ const scoped=new Set(validSources(account,action.evidenceIds));
+ const evidence=(action.evidenceIds??[]).map(id=>(account.evidence??[]).find(x=>x.id===id)).filter((x,i,all)=>x&&scoped.has(x.id)&&typeof x.claim==='string'&&x.claim.trim()&&all.findIndex(y=>y?.id===x.id)===i).slice(0,2);
+ if(!evidence.length)return null;
+ const proof=el('section',null,'discovery-proof');proof.setAttribute('aria-labelledby','discovery-proof-title');
+ const heading=el('h3','What changed the plan');heading.id='discovery-proof-title';
+ proof.append(add(el('div',null,'proof-heading'),heading,el('p','Current evidence → first action · not a change history')));
+ const sources=el('div',null,'proof-sources');
+ for(const source of evidence){
+  const sourceMarkedVerified=/^verified\b/i.test(String(source.confidence??''));
+  const item=add(el('div',null,'proof-source'),el('span',sourceMarkedVerified?'Source marked verified':'Source reports','proof-label'),el('p',source.claim,'proof-claim'),add(el('div',null,'proof-citation'),links([source.id]),el('span',source.confidence?'Source label: '+source.confidence:'Verification not recorded','proof-source-state')));
+  item.dataset.verification=sourceMarkedVerified?'source-marked-verified':'reported';sources.append(item);
+ }
+ const next=add(el('div',null,'proof-next'),el('span','Next action','proof-label'),el('p',action.action,'proof-action'),metadata('Owner',action.decisionOwner??action.owner??'Not assigned'),action.deal?metadata('Deal',action.deal):'');
+ const result=action.verificationResult,verificationSources=validSources(account,result?.evidenceIds).filter(id=>scoped.has(id));
+ next.append(metadata('Verification result',result?.text&&verificationSources.length?result.text:'Not recorded; the action is not marked complete.'));
+ if(result?.text&&verificationSources.length)next.append(links(verificationSources));
+ else if(action.success)next.append(metadata('Confirm by',action.success));
+ proof.append(add(el('div',null,'proof-grid'),sources,next));return proof;
+}
 function freshnessPanel(account){
  const stale=snapshot.syncStatus==='stale',signals=account.signals?.length??0,notes=account.notes?.length??0,hasEventCoverage=Array.isArray(account.signals)&&Array.isArray(account.notes);
  const n=el('aside',null,'snapshot-context'+(stale?' is-stale':''));n.setAttribute('aria-label','Snapshot provenance');
@@ -71,7 +93,7 @@ function render(){
  const routes=el('div',null,'brief-nav');
  routes.setAttribute('aria-label','Jump to a judging answer');
  routes.append(jump('Buying group','deals'),jump('Top 3 actions','actions'),jump('Timed risks','risks'),jump('Missing facts','gaps'),jump('Exact sources','evidence'));
- overview.append(metrics);out.append(overview,freshnessPanel(a),routes);
+ overview.append(metrics);out.append(overview);const proof=discoveryProof(a);if(proof)out.append(proof);out.append(freshnessPanel(a),routes);
  const r=a.recommendation, grid=el('div',null,'grid'), plan=card('Top actions',true);plan.id=blockId('actions');
  if(r){plan.append(add(el('div',null,'decision-context'),metadata('Confidence',r.confidence),el('p',r.reason??'','decision-reason')),metadata('Biggest unknown',r.unknown),links(r.evidence));list(plan,prioritizedActions(a).slice(0,3),(x,i)=>actionCard(a,x,i), 'No actions recorded.')}
  else empty(plan,'Make no recommendation until there is evidence.');

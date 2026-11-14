@@ -168,3 +168,25 @@ test('ambiguous or contradictory note acknowledgements never confirm or create a
   clock+=61000;
  }
 });
+
+test('optional exact action evidence overlay preserves existing plan and ignores malformed or unmatched additions',async()=>{
+ const db=fakeDb(),time=Date.now();
+ seed(db,'get_my_accounts',{...fixture,accounts:[
+  {id:'A',name:'Synthetic',facts:[{id:'old-a',text:'Source 1'},{id:'new-a',text:'Source 2'}]},
+  {id:'B',name:'Other',facts:[{id:'blocked-b',text:'Unrelated source'}]}
+ ]},time);
+ const app=workerWith({now:()=>time});
+ const plan={accountName:'Synthetic',recommendation:{decision:'Approved decision',actions:[
+  {action:'Exact task',owner:'CSM',evidenceIds:['old-a']},{action:'Second task'}
+ ]}};
+ const env={DB:db,AQ_REVIEW_MODE:'normalized',AQ_PLAN_A:JSON.stringify(plan)};
+ const parse=async raw=>{const snapshot=await read(app,{...env,AQ_ACTION_EVIDENCE:raw});assert.equal(snapshot.status,200);return snapshot.accounts[0].recommendation;};
+ const enabled=await parse(JSON.stringify({A:{accountName:'Synthetic',actions:{'Exact task':['new-a','old-a','blocked-b'],'second task':['new-a'],'not a task':['new-a']}}}));
+ assert.equal(enabled.decision,'Approved decision');assert.equal(enabled.actions[0].owner,'CSM');assert.equal(enabled.actions.length,2);
+ assert.deepEqual(enabled.actions.map(x=>x.evidenceIds),[['old-a','new-a'],[]]);
+ for(const malformed of ['', '{', 'null', '[]',
+  JSON.stringify({A:{accountName:'Other',actions:{'Exact task':['new-a']}}}),
+  JSON.stringify({A:{accountName:'Synthetic',actions:{'Exact task':['new-a',null]}}})]){
+  assert.deepEqual((await parse(malformed)).actions.map(x=>x.evidenceIds),[['old-a'],[]]);
+ }
+});

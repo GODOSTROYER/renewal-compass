@@ -35,3 +35,7 @@ Live verification needs an authorized runtime secret, a D1 binding and applied s
 ## Submission boundary
 
 This repository and deployment are review artifacts. Neither publishing source nor deploying the dashboard confirms competition submission, scoring, live signal completeness, or successful organizer note writes. Submission and organizer mutations require the owner's separate authorization. Never paste a token into a README, URL, screenshot, chat transcript, or shell example.
+
+## One-command public check
+
+From `hosting/`, run `node scripts/check-public.mjs --require-action-sources`. This checks the existing public URL once without a login and confirms both accounts, exact in-account sources on the ranked moves, and the public note-body boundary. The output identifies stale, successfully empty, or signal-present data without treating any of them as proof that a new event arrived. It never calls the organizer directly or writes a note.

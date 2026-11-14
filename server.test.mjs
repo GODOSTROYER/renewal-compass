@@ -75,3 +75,18 @@ test('duplicated official results are counted once; a missing value stays unknow
  delete closed.worth_up_to;
  assert.equal(normalizeOrganizer(input).accounts[0].gameValue.amount,null);
 });
+
+test('private action references are copied only from exact account-scoped evidence IDs; no fallback stuffing',()=>{
+ const results={get_my_accounts:{format:'account-quest-v2-export/1',accounts:[
+  {id:'A',name:'Synthetic A',facts:[{id:'real-a',text:'Owner reported a barrier',status:'told'}]},
+  {id:'B',name:'Synthetic B',facts:[{id:'real-b',text:'Unrelated account-specific record',status:'verified'}]}
+ ]}};
+ const recommendation={actions:[
+  {action:'Act on source',evidenceIds:['real-a','real-a','real-b','real-a-typo']},
+  {action:'Unverified action'},
+ ]};
+ const [a,b]=normalizeOrganizer(results,{A:{recommendation},B:{recommendation}}).accounts;
+ assert.deepEqual(a.recommendation.actions.map(x=>x.evidenceIds),[['real-a'],[]]);
+ assert.deepEqual(b.recommendation.actions.map(x=>x.evidenceIds),[['real-b'],[]]);
+ assert.equal(a.evidence.find(x=>x.id==='real-a').confidence,'told');
+});

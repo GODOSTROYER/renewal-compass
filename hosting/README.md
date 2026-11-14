@@ -22,3 +22,5 @@ There is no timer after viewers leave. An approved unattended service can call t
 ## Judge quick start and reproducibility
 
 See [the reviewer proof path](docs/REVIEW.md) for a two-minute evaluation, credential-free local preview, exact verification commands, and limits of the evidence. In the public repository this directory is published as `hosting/`; run commands from that directory. No competition submission is performed by the build or test commands.
+
+`AQ_ACTION_EVIDENCE` is an optional account-name and exact-action-text overlay for source links on curated actions. Set it only in runtime configuration. It appends links for already existing actions; the mapper rejects references not in that account's evidence ledger.

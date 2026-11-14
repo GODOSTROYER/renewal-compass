@@ -71,8 +71,10 @@ export function normalizeOrganizer(results,plans={}){
   const accountMove=Number.isInteger(a.minute)?a.minute:undefined;
   const planOpps=list(a.opportunities).map(d=>({...d,...(privatePlan.deals?.[d.id]??{})}));
   const fallback=buildFallback({opportunities:planOpps,evidence,stakeholders:people,signals:relevant.filter(x=>!privatePlan.signalPolicy?.[x.id]),contract:bookValue,accountRef,accountMove});
+  const localEvidenceIds=new Set(evidence.map(x=>x.id));
+  const sourcedAction=x=>({...x,evidenceIds:[...new Set(list(x.evidenceIds).filter(id=>typeof id==='string'&&localEvidenceIds.has(id)))]});
   const recommendation=privatePlan.recommendation?{
-   ...privatePlan.recommendation,actions:[...rankSignals(relevant,privatePlan.signalPolicy),...fallback.signalActions,...list(privatePlan.recommendation.actions)]
+   ...privatePlan.recommendation,actions:[...rankSignals(relevant,privatePlan.signalPolicy),...fallback.signalActions,...list(privatePlan.recommendation.actions)].filter(x=>x&&typeof x==='object').map(sourcedAction)
   }:fallback.recommendation;
   const autoDealMap=new Map(fallback.deals.map(d=>[d.id,d]));
   const context=[a.official_story&&'Official handover, not asserted truth: '+a.official_story,privatePlan.context].filter(Boolean).join(' ');

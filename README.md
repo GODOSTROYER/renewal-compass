@@ -36,7 +36,9 @@ The root-level Node server is an alternative deployment, not the submitted servi
 
 ### Judge proof check · 14 November 2026
 
-The submitted service was verified without sign-in at 09:05 UTC, after deployment of Worker revision `273d894`. It returned both sourced books (£350,000 and €140,000), and the organizer signal check succeeded with zero returned events. That proves a fresh check, not a new arrival or organizer note write.
+The submitted service was verified without sign-in on Worker revision `e3de223`: both sourced books (£350,000 and €140,000) load, and both briefs show a **What changed the plan** card with exact discovery sources. An earlier 09:05 UTC organizer read succeeded with zero returned events. A successful check is not proof of a new arrival or organizer note write.
 
 - **Eastern Counties:** open Account brief → Exact sources. `paperwork:A/profile.json` backs the annual book. `fo_dpia_2` identifies the missing-document blocker; `srv_dataflow` is the engineering handoff. The first move is delivering the pack and getting Fatima to confirm receipt and the DPIA decision date.
 - **Aldermoor:** `paperwork:B/profile.json` backs the annual book. `ba_deputy_0` identifies continuity risk; the first move is documenting the deputy's rollout and naming a backup who can reproduce one rollout. The deputy's exact departure date remains unverified.
+
+To reproduce the public acceptance checks, run `node scripts/check-public.mjs --require-action-sources` from `hosting/`. This is a read-only check of both accounts, ranked action sources, and the public reviewer boundary.
