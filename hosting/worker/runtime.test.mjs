@@ -317,3 +317,43 @@ test('sparse viewer traffic foregrounds overdue roster and discovers only its ne
  assert.equal(a.bookValue.amount,42);assert(a.bookValue.evidenceIds.some(id=>id.includes(novel)));
  assert(current.syncHealth.paperworkCheckedAt[novel]);
 });
+
+test('reviewer numbers track direct annual profile provenance without substituting invoice money',async()=>{
+ const db=fakeDb(),now=Date.now(), accounts=[
+  {id:'A',name:'Different currencies'}, {id:'B',name:'No profile currency'}, {id:'T',name:'Zero annual'}
+ ];
+ seed(db,'get_my_accounts',{...fixture,accounts},now);
+ for(const [account,currency,amount] of [['A','GBP',200],['B',undefined,200],['T','EUR',0]]){
+  seed(db,'get_all_paperwork:'+account,{account,records:[
+   {kind:'contract',path:'contract.txt',text:'Private contributor email test@example.com'},
+   {kind:'profile',path:'profile.json',data:{currency,renewal:{annual_value:amount}}},
+   {kind:'invoices',path:'invoices.json',data:{currency:'EUR',first_year_total:account==='T'?0:200}}
+  ]},now);
+ }
+ const result=await read(workerWith({now:()=>now}),{DB:db,AQ_REVIEW_MODE:'normalized'});
+ const [a,b,t]=result.accounts;
+ assert.equal(a.bookValue.amount,200);assert.equal(a.bookValue.currency,'GBP');
+ assert.deepEqual(a.bookValue.provenance.directEvidenceIds,['paperwork:A/profile.json']);
+ assert.deepEqual(a.bookValue.provenance.invoiceComparison,{status:'different-currency',amount:200,currency:'EUR',evidenceIds:['paperwork:A/invoices.json']});
+ assert(a.gaps.some(gap=>gap.question.includes('invoice records differ')));
+ assert.equal(b.bookValue.amount,null);assert.equal(b.bookValue.provenance.status,'currency-missing');
+ assert.equal(b.bookValue.provenance.invoiceComparison.status,'not-comparable');
+ assert.equal(t.bookValue.amount,0);assert.equal(t.bookValue.provenance.invoiceComparison.status,'same-amount-and-currency');
+ assert(!JSON.stringify(result).includes('Private contributor'));
+});
+
+test('reviewer diagnostics distinguish missing, ledger-only and stakeholder-reported evidence without leaking bad IDs',async()=>{
+ const db=fakeDb(),now=Date.now();
+ seed(db,'get_my_accounts',{...fixture,accounts:[{id:'A',name:'Synthetic',facts:[{id:'stakeholder-claim',said_by:'Demo',text:'Reported adoption',status:'told'}]}],
+  files:[{account:'A',id:'file-index-only',title:'An indexed file',path:'index.csv'}]
+ },now);
+ const plan={accountName:'Synthetic',recommendation:{decision:'Review adoption',evidence:['bad-private-id'],
+  actions:[{action:'Review report',evidenceIds:['stakeholder-claim','bad-private-id','stakeholder-claim']},{action:'Read export',evidenceIds:['file-index-only']},{action:'Find record'}]}};
+ const result=await read(workerWith({now:()=>now}),{DB:db,AQ_REVIEW_MODE:'normalized',AQ_PLAN_A:JSON.stringify(plan)});
+ const a=result.accounts[0].recommendation;
+ assert.equal(a.evidenceStatus.state,'not-found');assert.deepEqual(a.evidence,[]);
+ assert.deepEqual(a.actions[0].evidenceStatus,{linkedReferences:1,missingReferences:1,claimBearingReferences:1,stakeholderReportedReferences:1,state:'partial'});
+ assert.deepEqual(a.actions[0].evidenceIds,['stakeholder-claim']);
+ assert.equal(a.actions[1].evidenceStatus.state,'index-only');assert.equal(a.actions[2].evidenceStatus.state,'not-linked');
+ assert(!JSON.stringify(result).includes('bad-private-id'));
+});

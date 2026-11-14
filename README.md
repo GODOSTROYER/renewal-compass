@@ -6,9 +6,9 @@ An evidence-first CRM for the customer-success manager walking into Monday. For 
 
 ### Start here
 
-1. Open either account and expand a contract book source. Contract value, invoices, and game commitments are distinct and are never added together.
+1. Open an assigned account and follow the annual contract value to its direct source. Invoice totals, game commitments, and annual contract values are distinct and never added together.
 2. Read the three ranked actions. A proposed verification checkpoint is not a contractual deadline. The source trail explains which facts are supported and which still need checking.
-3. Open the second account and check the freshness badge. A successful check with no new events is different from a stale feed. The dashboard retains and labels its last verified snapshot on a temporary upstream failure.
+3. Switch accounts and check the freshness badge and the selected account’s paperwork timestamp. A successful check with no new events is different from a stale feed. The dashboard retains and labels its last verified snapshot on a temporary upstream failure.
 
 ### Run and test
 
@@ -23,7 +23,8 @@ Open `http://127.0.0.1:8314` in sample mode. To verify the exact production adap
 
 ```sh
 node scripts/build.mjs
-node --test worker/runtime.test.mjs
+node --test worker/runtime.test.mjs scripts/check-public.test.mjs
+node --test worker/live-loop.test.mjs
 ```
 
 From repository root, `node --test *.test.mjs` covers the alternative Node backend and its independent reasoning tests. Optional browser QA (requires Playwright with Chromium): from `hosting/`, run `node tests/manager-readiness-ui.cjs`. That test uses isolated synthetic data, not organizer credentials.
@@ -34,7 +35,7 @@ The hosted adapter is a Cloudflare Worker with a D1 cache. It keeps organizer cr
 
 The root-level Node server is an alternative deployment, not the submitted service. Do not publish local discovery files, private plan settings, raw caches, or credentials.
 
-### Judge proof check · 14 November 2026
+### Historical judge proof · 14 November 2026
 
 The submitted service was verified without sign-in at 10:16 UTC on Worker revision `03e0dd2`: both books (£350,000 and €140,000), six evidence-backed decision constraints, and the same two known organizer signals reappearing in the feed. This is observed feed recovery, not two new arrivals. The production response fingerprint matched the locally built Worker and assets. Proposed checkpoints are not customer deadlines.
 
@@ -51,7 +52,9 @@ The [judge-window refresh workflow](.github/workflows/questathon-refresh.yml) is
 
 Risk cards show the next move only when the account’s evidence uniquely supports the match. Exact duplicates are combined without merging distinct clocks, causes or actions. The same rule is tested on an unseen synthetic account.
 
-A copied action includes both available snapshot timestamps and asks the next owner to recheck before committing. The temporary independent judging check and GitHub workflow are bounded to the judging window. After the window, use **Refresh data** or open the dashboard to request the next eligible check; there is no native always-on scheduler.
+A copied action preserves missing, pending, or stale evidence warnings, signal check time, and selected-account paperwork time. The next owner should recheck before committing. The temporary independent judging check and GitHub workflow are bounded to the judging window. After the window, use **Refresh data** or open the dashboard to request the next eligible check; there is no native always-on scheduler.
+
+See the [operator guide](hosting/docs/OPERATIONS.md) for scope, refresh failures, and release identity verification.
 
 ### Newly assigned accounts
 

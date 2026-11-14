@@ -1,12 +1,22 @@
 # Renewal Compass — Sites Worker
 
-This wrapper serves the audited CRM UI and synchronizes with the organizer's documented MCP. It never sends a Player Token or raw MCP cache to the browser. Default deployment serves synthetic fixture data until reviewer mode is explicitly configured.
+This wrapper serves the evidence-linked CRM UI and synchronizes with the organizer's documented MCP. It never sends a Player Token or raw MCP cache to the browser. Default deployment serves synthetic fixture data until reviewer mode is explicitly configured.
 
 ## Check and package
 
 Public checkouts without `.openai/hosting.json` use the public example manifest for local build and test verification only. Configure a real `.openai/hosting.json` through the hosting workflow before deployment; an existing real manifest is copied unchanged.
 
-Run `node scripts/build.mjs` followed by `node --test worker/runtime.test.mjs`. Run the build first: the tests import the assembled Worker, not its unbundled source. The build uses Node only and embeds the exact allowlisted browser assets under `crm/` in a Cloudflare Worker ES module. The production artifact is `dist/server/index.js`; `dist/.openai/hosting.json` declares the D1 `DB` binding and `dist/.openai/drizzle/` contains the schema migration. Use the Sites source/version workflow with the exact project and pushed revision; never publish runtime data in Git.
+From this directory, use Node 22 or newer. No package installation or credentials are needed for local verification:
+
+```sh
+node scripts/build.mjs
+node --test worker/runtime.test.mjs scripts/check-public.test.mjs
+node --test worker/live-loop.test.mjs
+```
+
+Run the live-loop test separately: it rebuilds `dist/` itself. These commands run local synthetic responses only and do not certify a live organizer integration. For a static UI preview, run `python3 -m http.server 8000 --directory crm --bind 127.0.0.1`, open http://127.0.0.1:8000, then stop with Ctrl+C.
+
+ Run the build first: the tests import the assembled Worker, not its unbundled source. The build uses Node only and embeds the exact allowlisted browser assets under `crm/` in a Cloudflare Worker ES module. The production artifact is `dist/server/index.js`; `dist/.openai/hosting.json` declares the D1 `DB` binding and `dist/.openai/drizzle/` contains the schema migration. Use the Sites source/version workflow with the exact project and pushed revision; never publish runtime data in Git.
 
 ## Runtime configuration (names only)
 
@@ -34,3 +44,7 @@ See [the reviewer proof path](docs/REVIEW.md) for a two-minute evaluation, crede
 The organizer roster may grow beyond the original A/B accounts. New accounts must remain visible as provisional discovery when paperwork, value, deadlines or buying authority are not yet verified. Missing values are unknown, not zero; a sparse account is not a fully verified three-action brief.
 
 `node scripts/check-public.mjs --min-accounts=3` performs read-only publication GETs and reports each account's verification level. Add `--require-action-sources` to fail if any reported account has no sourced action. Do not poll this script continuously. `node scripts/verify-release.mjs /path/to/saved-snapshot.json` audits saved publication evidence and the local built Worker offline. Use a saved snapshot from the matching release when checking its build fingerprint; historical snapshots without that marker cannot establish release identity. Account-local source and checkpoint checks apply to the roster present in that saved evidence. Neither command proves a newly arrived real signal or submits an organizer note.
+
+## Operator decision and release workflow
+
+Use [the operator decision guide](docs/OPERATIONS.md) before moving from evidence review to a customer action, runtime change, or release. Reviewers can inspect sources and copy a handoff without writing a note. A successful build, public page, or copied handoff is not a submitted entry, a sent customer message, or proof of a completed action.

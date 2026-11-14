@@ -18,7 +18,7 @@ From the repository root (the hosting source lives in `hosting/`):
 cd hosting
 node --version
 node scripts/build.mjs
-node --test worker/runtime.test.mjs
+node --test worker/runtime.test.mjs scripts/check-public.test.mjs
 python3 -m http.server 8000 --directory crm --bind 127.0.0.1
 ```
 
@@ -28,7 +28,7 @@ To build the deployment artifact, run `node scripts/build.mjs` from `hosting/`. 
 
 ## What the tests prove, and do not prove
 
-Run `node --test worker/live-loop.test.mjs` separately for an isolated synthetic organizer empty → new event → sourced first move → deduplication → stale-cache recovery check against the assembled Worker.
+Run `node --test worker/live-loop.test.mjs` separately, never concurrently with other build-dependent tests, for an isolated synthetic organizer empty → new event → sourced first move → deduplication → stale-cache recovery check against the assembled Worker.
 
 `worker/runtime.test.mjs` exercises the runtime with mocked upstream responses and database behavior. Passing tests are useful regression evidence, not a live organizer integration certification. Inspect the test output for the exact covered cases and failures. A static preview does not exercise the Worker security boundary.
 
@@ -40,7 +40,7 @@ This repository and deployment are review artifacts. Neither publishing source n
 
 ## One-command public check
 
-From `hosting/`, run `node scripts/check-public.mjs --require-action-sources`. This checks the existing public URL once without a login and confirms both accounts, exact in-account sources on the ranked moves, and the public note-body boundary. The output identifies stale, successfully empty, or signal-present data without treating any of them as proof that a new event arrived. It never calls the organizer directly or writes a note.
+From `hosting/`, run `node scripts/check-public.mjs --require-action-sources`. This checks the existing public URL once without a login, checks in-account sources on reported moves, and enforces the public note-body boundary. The roster is dynamic: add `--min-accounts=3` only when at least three accounts are expected. A sparse newly assigned account is reported separately as provisional, not as a fully verified brief. With `--require-action-sources`, an account without any sourced move fails the check. The output identifies stale, successfully empty, or signal-present data without treating any of them as proof that a new event arrived. It never calls the organizer directly or writes a note.
 
 ## Human handoff
 
@@ -50,3 +50,12 @@ From `hosting/`, run `node scripts/check-public.mjs --require-action-sources`. T
 4. A previously recorded organizer ID may be missing or reappear later. The observation trail records what this deployment saw. It does not establish when the organizer first issued an event, whether the problem was resolved, or whether a recommended action happened.
 
 For a local review of a saved public response, build the Worker and run `node scripts/verify-release.mjs /path/to/snapshot.json`. It verifies the exact compiled fingerprint and reviewer boundaries without any network access. It is a point-in-time comparison, not live-feed certification.
+
+## Read a verification failure correctly
+
+- A missing or mismatched `releaseFingerprint` fails the saved-snapshot release check even when the source links are valid. Rebuilding locally cannot prove which revision is deployed; do not edit the snapshot to make it pass.
+- A missing account should be checked against the expected roster, not hidden by lowering the requested minimum. New sparse accounts need discovery, not invented contract values or dates.
+- A source reference that does not resolve inside the same account blocks relying on that action. An indexed file proves its listing, not that its contents were retrieved.
+- A proposed checkpoint is an internal verification target. Ask the named owner to confirm actual timing before making a commitment.
+
+See [the operator decision guide](OPERATIONS.md) for the release gates and escalation path. The offline commands above are sufficient for an initial review; no public endpoint or organizer access is required.

@@ -36,6 +36,8 @@ test('SYNTHETIC built Worker: empty → sourced ranked change → duplicate → 
  const accountName='SYNTHETIC ONLY Acme Sandbox';
  const signal={id:'synthetic-live-loop-001',account:'A',title:'SYNTHETIC ONLY pilot interruption',summary:'Invented fixture: pilot paused pending owner review.'};
  const baseline={action:'SYNTHETIC ONLY routine account review',owner:'Synthetic CSM',urgency:10,success:'Review fixture',evidenceIds:['account:A']};
+ const linked={linkedReferences:1,missingReferences:0,claimBearingReferences:1,stakeholderReportedReferences:0,state:'linked'};
+ const sourcedBaseline={...baseline,evidenceStatus:linked};
  const triggered={action:'SYNTHETIC ONLY assign pilot recovery owner before routine review',owner:'Synthetic CSM',urgency:99,success:'Record a fixture owner and recovery checkpoint.',dueDate:'Synthetic next checkpoint'};
  const seed=(name,value)=>db.rows.set(name,{name,value:JSON.stringify(value),retrieved_at:new Date(clock).toISOString()});
  seed('get_my_accounts',{format:'account-quest-v2-export/1',accounts:[{id:'A',name:accountName,official_story:'Invented fixture account.'}]});
@@ -62,12 +64,12 @@ test('SYNTHETIC built Worker: empty → sourced ranked change → duplicate → 
  const empty=await read();
  assert.equal(empty.syncHealth.signalState,'fresh-empty');
  assert.deepEqual(empty.accounts[0].signals,[]);
- assert.deepEqual(prioritizedActions(empty.accounts[0]),[baseline]);
+ assert.deepEqual(prioritizedActions(empty.accounts[0]),[sourcedBaseline]);
  step=1;clock+=181000;
  const changed=await read(),a=changed.accounts[0],reference='signal:'+signal.id;
  assert.equal(changed.syncHealth.signalState,'signals-present');
  assert.deepEqual(a.signals.map(s=>s.id),[signal.id]);
- assert.deepEqual(prioritizedActions(a),[{...triggered,origin:'CRM recommendation triggered by official signal',evidenceIds:[reference]},baseline]);
+ assert.deepEqual(prioritizedActions(a),[{...triggered,origin:'CRM recommendation triggered by official signal',evidenceIds:[reference],evidenceStatus:linked},sourcedBaseline]);
  assert.deepEqual(a.evidence.find(e=>e.id===reference),{id:reference,sourceId:reference,title:signal.title,source:'Organizer signal / '+signal.id,confidence:'Official event; implications are CRM recommendations',claim:signal.summary});
  assert.deepEqual(a.signals[0].evidenceIds,[reference]);
  assert.notDeepEqual(prioritizedActions(a),prioritizedActions(empty.accounts[0]));

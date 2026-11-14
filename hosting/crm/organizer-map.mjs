@@ -42,17 +42,30 @@ export function normalizeOrganizer(results,plans={}){
   const paperwork=unwrap(results['get_all_paperwork:'+a.id]);
   const paperworkEntry=results['get_all_paperwork:'+a.id];
   const records=paperwork?.account===a.id&&(!paperworkEntry?.accountName||paperworkEntry.accountName===a.name)?unique(paperwork.records,'path'):[];
-  const profile=records.find(x=>x.kind==='profile')?.data, invoices=records.find(x=>x.kind==='invoices')?.data;
-  const annual=Number.isFinite(profile?.renewal?.annual_value)?profile.renewal.annual_value:null;
+  const profileRow=records.find(x=>x.kind==='profile'),invoiceRow=records.find(x=>x.kind==='invoices');
+  const profile=profileRow?.data,invoices=invoiceRow?.data;
   const validCurrency=x=>typeof x==='string'&&/^[A-Z]{3}$/.test(x);
+  const nonnegative=x=>Number.isFinite(x)&&x>=0;
+  const profileAmount=nonnegative(profile?.renewal?.annual_value)?profile.renewal.annual_value:null;
   const bookCurrency=validCurrency(profile?.currency)?profile.currency:undefined;
-  const invoiceConflict=Number.isFinite(annual)&&Number.isFinite(invoices?.first_year_total)&&
-   (annual!==invoices.first_year_total||bookCurrency!==invoices.currency);
-  const bookValue={amount:annual,currency:bookCurrency,termEnd:profile?.renewal?.term_ends,evidenceIds:records.filter(x=>['profile','contract','invoices'].includes(x.kind)).map(x=>recordKey(a.id,x.path))};
-  const reconciliation=invoiceConflict?{question:'Why do annual contract and first-year invoice records differ?',why:'Different bases, credits or currencies may explain the difference. Do not treat invoice amount as contracted annual value.',ask:'Finance and the contract owner',evidenceIds:bookValue.evidenceIds}:null;
+  // Currency is required to assert a value; never fill it from the invoice.
+  const annual=bookCurrency?profileAmount:null;
+  const invoiceAmount=nonnegative(invoices?.first_year_total)?invoices.first_year_total:null;
+  const invoiceCurrency=validCurrency(invoices?.currency)?invoices.currency:undefined;
+  const invoiceComparable=invoiceAmount!==null&&invoiceCurrency&&annual!==null;
+  const comparison=!invoiceComparable?'not-comparable':bookCurrency!==invoiceCurrency?'different-currency':
+   annual===invoiceAmount?'same-amount-and-currency':'different-amount';
+  const directEvidenceIds=annual!==null&&profileRow?[recordKey(a.id,profileRow.path)]:[];
+  const invoiceRefs=invoiceRow?[recordKey(a.id,invoiceRow.path)]:[];
+  const bookValue={amount:annual,currency:bookCurrency,termEnd:profile?.renewal?.term_ends,
+   evidenceIds:records.filter(x=>['profile','contract','invoices'].includes(x.kind)).map(x=>recordKey(a.id,x.path)),
+   provenance:{basis:'annual-contract-value-from-organizer-profile',directEvidenceIds,
+    ...(directEvidenceIds.length===0&&{status:profileAmount!==null?'currency-missing':'annual-value-missing'}),
+    invoiceComparison:{status:comparison,evidenceIds:invoiceRefs,...(invoiceAmount!==null&&invoiceCurrency&&{amount:invoiceAmount,currency:invoiceCurrency})}}};
+  const reconciliation=['different-currency','different-amount'].includes(comparison)?{question:'Why do annual contract and first-year invoice records differ?',why:'Different bases, credits or currencies may explain the difference. Do not treat invoice amount as contracted annual value.',ask:'Finance and the contract owner',evidenceIds:[...directEvidenceIds,...invoiceRefs]}:null;
   for(const x of records){if(typeof x.path!=='string')continue;
-   const claim=x.kind==='profile'&&annual!==null?'Contracted annual value: '+annual+' '+bookCurrency+' · term ends '+profile.renewal.term_ends
-    :x.kind==='invoices'&&Number.isFinite(invoices?.first_year_total)?'First-year invoice total: '+invoices.first_year_total+' '+invoices.currency
+   const claim=x===profileRow&&annual!==null?'Contracted annual value: '+annual+' '+bookCurrency+(profile.renewal.term_ends?' · term ends '+profile.renewal.term_ends:'')
+    :x===invoiceRow&&invoiceAmount!==null&&invoiceCurrency?'First-year invoice total: '+invoiceAmount+' '+invoiceCurrency
     :x.kind==='contract'?String(x.text??'').slice(0,1000):undefined;
    evidence.push({id:recordKey(a.id,x.path),sourceId:recordKey(a.id,x.path),title:x.path,source:'Organizer paperwork / '+x.kind,confidence:'Organizer record',claim});
   }
@@ -73,17 +86,29 @@ export function normalizeOrganizer(results,plans={}){
   const fallback=buildFallback({opportunities:planOpps,evidence,stakeholders:people,signals:relevant.filter(x=>!privatePlan.signalPolicy?.[x.id]),contract:bookValue,accountRef,accountMove});
   const localEvidenceIds=new Set(evidence.map(x=>x.id));
   const localIds=ids=>[...new Set(list(ids).filter(id=>typeof id==='string'&&localEvidenceIds.has(id)))];
+  const evidenceLookup=new Map(evidence.map(x=>[x.id,x]));
+  const evidenceStatus=ids=>{
+   const refs=[...new Set(list(ids).filter(id=>typeof id==='string'&&id))];
+   const resolved=localIds(refs);
+   const substantive=resolved.filter(id=>typeof evidenceLookup.get(id)?.claim==='string'&&evidenceLookup.get(id).claim.trim());
+   return {linkedReferences:resolved.length,missingReferences:refs.length-resolved.length,
+    claimBearingReferences:substantive.length,
+    stakeholderReportedReferences:substantive.filter(id=>evidenceLookup.get(id)?.confidence==='told').length,
+    state:!refs.length?'not-linked':!resolved.length?'not-found':!substantive.length?'index-only':resolved.length<refs.length?'partial':'linked'};
+  };
   const sourcedAction=x=>{
    const {decisionConstraint,...base}=x, support=localIds(decisionConstraint?.evidenceIds);
-   return {...base,evidenceIds:localIds(x.evidenceIds),...(x.proposedCheckpoint&&{
+   return {...base,evidenceIds:localIds(x.evidenceIds),evidenceStatus:evidenceStatus(x.evidenceIds),...(x.proposedCheckpoint&&{
     proposedCheckpoint:{...x.proposedCheckpoint,evidenceIds:localIds(x.proposedCheckpoint.evidenceIds)}
    }),...(typeof decisionConstraint?.text==='string'&&decisionConstraint.text.trim()&&decisionConstraint.text.length<=400&&support.length&&{
     decisionConstraint:{text:decisionConstraint.text.trim(),evidenceIds:support}
    })};
   };
-  const recommendation=privatePlan.recommendation?{
-   ...privatePlan.recommendation,actions:[...rankSignals(relevant,privatePlan.signalPolicy),...fallback.signalActions,...list(privatePlan.recommendation.actions)].filter(x=>x&&typeof x==='object').map(sourcedAction)
-  }:fallback.recommendation;
+  const activeRecommendation=privatePlan.recommendation??fallback.recommendation;
+  const actions=privatePlan.recommendation?[...rankSignals(relevant,privatePlan.signalPolicy),...fallback.signalActions,...list(privatePlan.recommendation.actions)]
+   :list(fallback.recommendation?.actions);
+  const recommendation=activeRecommendation&&{...activeRecommendation,evidence:localIds(activeRecommendation.evidence),
+   evidenceStatus:evidenceStatus(activeRecommendation.evidence),actions:actions.filter(x=>x&&typeof x==='object').map(sourcedAction)};
   const autoDealMap=new Map(fallback.deals.map(d=>[d.id,d]));
   const context=[a.official_story&&'Official handover, not asserted truth: '+a.official_story,privatePlan.context].filter(Boolean).join(' ');
   const components=unique([...agreed,...won],'id');

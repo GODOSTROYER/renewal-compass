@@ -70,24 +70,42 @@ function actionCard(account,action,index){
  body.append(sources.length?add(el('div',null,'action-provenance'),el('span','Action sources','meta-label'),links(sources)):el('p','No exact source is attached to this action. Validate it before committing.','source-missing'));
  const row=add(el('li',null,'action-item'),el('span',String(index+1).padStart(2,'0'),'action-number'),body);row.id='review-action-'+index;return row;
 }
+function snapshotTimestamp(value){
+ return typeof value==='string'&&/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(value)&&calendarDate(value.slice(0,10))&&!Number.isNaN(Date.parse(value))?new Date(value).toISOString():null;
+}
+function handoffTrust(account){
+ const checks=[],mode=snapshot?.mode,status=snapshot?.syncStatus;
+ if(mode==='fixture')checks.push('Illustrative sample, not organizer evidence.');
+ else if(mode==='discovery')checks.push('Manual snapshot; live refresh is not verified.');
+ else if(mode!=='live')checks.push('Snapshot provenance is unknown.');
+ if(status==='stale')checks.push('Saved snapshot; the latest refresh is not confirmed.');
+ else if(status==='awaiting-signals')checks.push('Signal check pending; event coverage is unverified.');
+ else if(status==='awaiting-paperwork')checks.push('Snapshot paperwork checks are incomplete.');
+ else if(status!=='ready')checks.push('Snapshot check status is unknown.');
+ if(Object.prototype.hasOwnProperty.call(snapshot?.syncHealth?.paperworkCheckedAt??{},account.id)&&snapshot.syncHealth.paperworkCheckedAt[account.id]===null)checks.push('This account’s paperwork has not been checked yet.');
+ if(!snapshotTimestamp(snapshot?.sourceAt)||!snapshotTimestamp(snapshot?.signalCheckedAt))checks.push('Source or signal-check timestamps are unknown.');
+ return {warning:checks.length>0,message:checks.length?checks.join(' '):'Snapshot reports checks ready. This does not independently verify the decision, customer approval or resolution of risks.'};
+}
 function handoffText(account,action,constraintText){
  const timing=actionTiming(account,action),sourceIds=validSources(account,action.evidenceIds),checkpoint=action.proposedCheckpoint;
  // Handoffs contain planned work, never evidence excerpts, email addresses or phone numbers.
  const clean=value=>String(value??'Not recorded').replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi,'[contact omitted]').replace(/(?:\+\d[\d ()-]{8,}\d|\b\d{3}[ .-]\d{3}[ .-]\d{4}\b)/g,'[contact omitted]');
- const lines=[['Account',account.name],['Decision',account.recommendation?.decision],['Decision constraint',constraintText??'Not recorded; verify the required decision gate.'],['Owner',action.decisionOwner??action.owner],['Next move',action.action],['Timing',timing.text+(timing.verified?' (source-backed calendar deadline)':' (calendar deadline unverified)')]];
+ const lines=[['Account',account.name],['Evidence trust',handoffTrust(account).message],['Decision',account.recommendation?.decision],['Decision constraint',constraintText??'Not recorded; verify the required decision gate.'],['Owner',action.decisionOwner??action.owner],['Next move',action.action],['Timing',timing.text+(timing.verified?' (source-backed calendar deadline)':' (calendar deadline unverified)')]];
  if(calendarDate(checkpoint?.date)&&checkpoint?.purpose&&checkpoint?.basis)lines.push(['Proposed checkpoint',checkpoint.date+' · '+checkpoint.purpose+' (internal proposed checkpoint, not the organizer scenario/customer deadline)']);
  lines.push(['Done when',action.success]);
  const result=action.verificationResult,resultIds=validSources(account,result?.evidenceIds).filter(id=>sourceIds.includes(id));
  lines.push(['Verification result',result?.text&&resultIds.length?result.text:'Not recorded; not marked complete.']);
- const savedTime=value=>typeof value==='string'&&/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(value)&&calendarDate(value.slice(0,10))&&!Number.isNaN(Date.parse(value))?new Date(value).toISOString():'Unknown (not recorded as a valid timestamp)';
+ const savedTime=value=>snapshotTimestamp(value)??'Unknown (not recorded as a valid timestamp)';
  lines.push(['Saved snapshot source time',savedTime(snapshot?.sourceAt)],['Saved snapshot signal check',savedTime(snapshot?.signalCheckedAt)]);
+ const paperwork=snapshot?.syncHealth?.paperworkCheckedAt??{};
+ lines.push(['Selected account paperwork check',savedTime(Object.hasOwn(paperwork,account.id)?paperwork[account.id]:null)]);
  return lines.map(([label,value])=>label+': '+clean(value)).join('\n')+'\nExact source IDs: '+(sourceIds.length?sourceIds.join(', '):'None linked; source verification required.')+'\nRecheck the latest evidence before committing.\nThis is a handoff draft. Nothing has been sent or scheduled.';
 }
 function handoffControl(account,action,constraintText){
  const control=el('div',null,'handoff-control'),button=el('button','Copy next move','handoff-button'),status=el('p',null,'handoff-status'),preview=el('details',null,'handoff-preview'),field=el('textarea');
  button.type='button';status.setAttribute('role','status');field.readOnly=true;field.rows=10;field.setAttribute('aria-label','Read-only next move handoff');preview.hidden=true;preview.append(el('summary','View handoff text'),field);
  button.addEventListener('click',async()=>{const text=handoffText(account,action,constraintText);field.value=text;preview.hidden=false;button.disabled=true;try{if(!navigator.clipboard?.writeText)throw Error('Clipboard unavailable');await navigator.clipboard.writeText(text);status.textContent='Copied. Nothing sent or scheduled.';preview.open=false;}catch{status.textContent='Clipboard unavailable. Select and copy the text below.';preview.open=true;field.focus();field.select();}finally{button.disabled=false;}});
- control.append(button,status,preview);return control;
+ const trust=handoffTrust(account);control.append(button);if(trust.warning)control.append(el('p','Evidence caution included in handoff','handoff-trust'));control.append(status,preview);return control;
 }
 function discoveryProof(account){
  const action=prioritizedActions(account)[0];
@@ -148,8 +166,13 @@ function render(){
  const overview=card('Account brief',true);overview.classList.add('account-brief');
  const metrics=el('dl',null,'brief');
  const row=(label,value)=>metrics.append(add(el('div',null,'brief-field'+(label==='Decision'?' decision':'')),el('dt',label),typeof value==='string'?el('dd',value):add(el('dd'),value)));
- const book=a.bookValue;
- row('Contract book',book?.amount!=null?add(el('span',money(book.amount,book.currency),'metric'),links(book.evidenceIds)): 'Unknown or not yet sourced');
+ const book=a.bookValue,bookSource=book?.provenance;
+ const directBookSources=validSources(a,bookSource?.directEvidenceIds??book?.evidenceIds);
+ row('Contract book',book?.amount!=null?add(el('span',money(book.amount,book.currency),'metric'),links(directBookSources)): 'Unknown or not yet sourced');
+ const invoice=bookSource?.invoiceComparison;
+ if(invoice?.status==='different-amount'||invoice?.status==='different-currency'){
+  row('Finance check',add(el('span','First-year invoices differ from the annual contract value. Confirm the basis with Finance; do not substitute the invoice total.','metadata'),links(validSources(a,invoice.evidenceIds))));
+ }
  if(book?.termEnd)row('Contract term ends',book.termEnd);
  if(a.gameValue)row('Game agreed value',add(el('span',money(a.gameValue.amount,a.gameValue.currency),'metric'),el('span',' · agreed deals + won offers','metadata'),links(a.gameValue.evidenceIds)));
  if(a.recommendation?.decision)row('Decision',el('strong',a.recommendation.decision));
