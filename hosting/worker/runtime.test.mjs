@@ -136,13 +136,13 @@ test('organizer confirmation survives local note index write failure',async()=>{
 
 test('stale signals go first, then periodic roster and both paperwork refreshes get through under continuous viewing',async()=>{
  const db=fakeDb(), start=Date.now(), age=start-30*60000;let clock=start;
- seed(db,'get_my_accounts',fixture,age);seed(db,'get_signals',{signals:[]},age);
+ seed(db,'get_my_accounts',{...fixture,accounts:[...fixture.accounts,{id:'B',name:'Synthetic B'}]},age);seed(db,'get_signals',{signals:[]},age);
  for(const account of ['A','B'])seed(db,'get_all_paperwork:'+account,{account,records:[]},age);
  const calls=[];
  const app=workerWith({now:()=>clock,upstreamFetch:async(url,init)=>{
   const {id,params}=JSON.parse(init.body), ac=params.arguments.account;
   calls.push([params.name,ac??null,clock]);
-  const result=params.name==='get_my_accounts'?{...fixture,accounts:[{id:'A',name:'Roster refreshed'}]}:
+  const result=params.name==='get_my_accounts'?{...fixture,accounts:[{id:'A',name:'Roster refreshed'},{id:'B',name:'Synthetic B'}]}:
    params.name==='get_signals'?{signals:[{id:'live',account:'A',title:'Fresh signal'}]}:{account:ac,records:[]};
   return Response.json({id,result});
  }});
@@ -284,4 +284,36 @@ test('exact action constraint requires account-scoped evidence and preserves an 
  assert.equal(a[0].owner,'CSM');assert.equal(a[1].decisionConstraint,undefined);
  assert.deepEqual(a[2].decisionConstraint,plan.recommendation.actions[2].decisionConstraint);
  assert.equal(a[3].decisionConstraint,undefined);
+});
+
+test('sparse viewer traffic foregrounds overdue roster and discovers only its new paperwork ID without extending notes',async()=>{
+ const db=fakeDb(), start=Date.now(), old=start-46*60000;let clock=start;
+ const two={...fixture,accounts:[...fixture.accounts,{id:'B',name:'Known B'}]};
+ const novel='surprise-42', added={id:novel,name:'Newly rostered client'};
+ seed(db,'get_my_accounts',two,old);seed(db,'get_signals',{signals:[]},start-60000);
+ for(const id of ['A','B','unlisted'])seed(db,'get_all_paperwork:'+id,{account:id,records:[]},old);
+ const calls=[];
+ const app=workerWith({now:()=>clock,upstreamFetch:async(url,init)=>{
+  const {id,params}=JSON.parse(init.body), ac=params.arguments.account;
+  calls.push({name:params.name,account:ac,at:clock});
+  const result=params.name==='get_my_accounts'?{...two,accounts:[...two.accounts,added]}:
+   params.name==='get_signals'?{signals:[]}:{account:ac,records:[{kind:'profile',path:'profile.json',data:{currency:'CAD',renewal:{annual_value:42}}}]};
+  return Response.json({id,result});
+ }});
+ const env=active(db);
+ let current=await read(app,env);
+ assert.equal(calls[0].name,'get_my_accounts');assert.equal(current.accounts.length,3);
+ assert.equal(current.syncHealth.paperworkCheckedAt[novel],null);
+ assert.equal(current.syncHealth.paperworkCheckedAt.unlisted,undefined);
+ assert.equal(current.syncStatus,'awaiting-paperwork');
+ const denied=await app.fetch(request('/api/admin/write-note',{method:'POST',headers:{Authorization:'Bearer operator-test'},body:JSON.stringify({account:novel,title:'Not allowed',text:'Not allowed'})}),env,ctx());
+ assert.equal(denied.status,400);assert.equal(calls.length,1);
+ for(let i=1;i<=8;i++){clock=start+i*10*60000;current=await read(app,env);}
+ assert(calls.some(x=>x.name==='get_all_paperwork'&&x.account===novel));
+ assert(calls.some(x=>x.name==='get_signals'));
+ assert(!calls.some(x=>x.account==='unlisted'||x.account==='C'||x.name==='write_note'));
+ assert(calls.every((x,i)=>i===0||x.at-calls[i-1].at>=61000));
+ const a=current.accounts.find(x=>x.id===novel);
+ assert.equal(a.bookValue.amount,42);assert(a.bookValue.evidenceIds.some(id=>id.includes(novel)));
+ assert(current.syncHealth.paperworkCheckedAt[novel]);
 });

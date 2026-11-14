@@ -28,3 +28,9 @@ See [the reviewer proof path](docs/REVIEW.md) for a two-minute evaluation, crede
 `AQ_ACTION_EVIDENCE` is an optional account-name and exact-action-text overlay for source links on curated actions. Set it only in runtime configuration. It appends links for already existing actions; the mapper rejects references not in that account's evidence ledger.
 
 `AQ_ACTION_CHECKPOINTS` may add a clearly labeled internal verification date for an existing action that lacks a calendar deadline. It cannot replace organizer timing or an existing checkpoint. Internal targets are not customer commitments or calendar bookings.
+
+## Evolving organizer roster
+
+The organizer roster may grow beyond the original A/B accounts. New accounts must remain visible as provisional discovery when paperwork, value, deadlines or buying authority are not yet verified. Missing values are unknown, not zero; a sparse account is not a fully verified three-action brief.
+
+`node scripts/check-public.mjs --min-accounts=3` performs read-only publication GETs and reports each account's verification level. Add `--require-action-sources` to fail if any reported account has no sourced action. Do not poll this script continuously. `node scripts/verify-release.mjs /path/to/saved-snapshot.json` audits saved publication evidence and the local built Worker offline. Use a saved snapshot from the matching release when checking its build fingerprint; historical snapshots without that marker cannot establish release identity. Account-local source and checkpoint checks apply to the roster present in that saved evidence. Neither command proves a newly arrived real signal or submits an organizer note.

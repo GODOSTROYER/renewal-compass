@@ -1,11 +1,22 @@
 // Injected at build time: normalizeOrganizer and ASSETS; neither can read credentials.
 const ORGANIZER_MCP='https://questathon.aihackerscollective.com/api/public/mcp';
 const COOLDOWN=61000;
-const READS=['get_my_accounts','get_signals','get_all_paperwork:A','get_all_paperwork:B'];
+const BASE_READS=['get_my_accounts','get_signals'];
+const ROSTER_INTERVAL=20*60000;
+const ROSTER_HARD_AGE=ROSTER_INTERVAL+20*60000;
+const PAPERWORK_PREFIX='get_all_paperwork:';
+const WRITE_NOTE_ACCOUNTS=new Set(['A','B']);
+const accountId=id=>typeof id==='string'&&/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(id)&&!Object.hasOwn(Object.prototype,id);
+const paperworkKey=id=>PAPERWORK_PREFIX+id;
 const CACHE_SELECT='SELECT name,retrieved_at,value FROM quest_cache';
-const READ_TYPES=new Set(READS);
-// Relative to each successful pull. Offset windows avoid bunching expensive paperwork reads.
-const REFRESH_EVERY={'get_my_accounts':20*60000,'get_signals':COOLDOWN,'get_all_paperwork:A':22*60000,'get_all_paperwork:B':24*60000};
+const BASE_READ_TYPES=new Set(BASE_READS);
+// The exact current roster, not guessed identifiers, controls paperwork.
+const rosterIds=wrapped=>(payload(wrapped?.value)?.accounts??[]).map(a=>a.id);
+function readPlan(snapshot){
+ const intervals=new Map([['get_my_accounts',ROSTER_INTERVAL],['get_signals',COOLDOWN]]);
+ [...rosterIds(snapshot.get_my_accounts)].sort().forEach((id,i)=>intervals.set(paperworkKey(id),(22+2*(i%5))*60000));
+ return intervals;
+}
 const api=(out,status=200,headers={})=>new Response(JSON.stringify(out),{status,headers:{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff',...headers}});
 const anonAllowed=env=>env.AQ_REVIEW_MODE==='normalized';
 const reviewerAllowed=(req,env)=>anonAllowed(env)||(env.AQ_REVIEW_MODE==='site-authenticated'&&Boolean(req.headers.get('oai-authenticated-user-id')));
@@ -61,9 +72,9 @@ function payload(result){
  return result;
 }
 function validPayload(key,value){
- if(key==='get_my_accounts')return value?.format==='account-quest-v2-export/1'&&Array.isArray(value.accounts)&&value.accounts.every(x=>x&&typeof x.id==='string'&&typeof x.name==='string');
+ if(key==='get_my_accounts')return value?.format==='account-quest-v2-export/1'&&Array.isArray(value.accounts)&&value.accounts.every(x=>x&&accountId(x.id)&&typeof x.name==='string')&&new Set(value.accounts.map(x=>x.id)).size===value.accounts.length;
  if(key==='get_signals')return Array.isArray(value?.signals)&&value.signals.every(x=>x&&typeof x.id==='string'&&typeof x.account==='string'&&typeof x.title==='string');
- if(key.startsWith('get_all_paperwork:'))return value?.account===key.split(':')[1]&&Array.isArray(value.records);
+ if(key.startsWith(PAPERWORK_PREFIX))return value?.account===key.slice(PAPERWORK_PREFIX.length)&&Array.isArray(value.records);
  return false;
 }
 const OBSERVATION_KEY='_crmSignalObservations';
@@ -133,12 +144,20 @@ async function reserve(db,now){
 async function cache(db){
  const rows=await db.prepare(CACHE_SELECT).all();
  const valid={};
- for(const x of rows.results){
-  if(!READ_TYPES.has(x.name)&&!(x.name.startsWith('retry:')&&READ_TYPES.has(x.name.slice(6))))continue;
+ const accept=(row,key)=>{
   try{
-   const value=JSON.parse(x.value);
-   if(x.name.startsWith('retry:')||validPayload(x.name,payload(value)))valid[x.name]={at:x.retrieved_at,value};
+   const value=JSON.parse(row.value);
+   if(row.name.startsWith('retry:')||validPayload(key,payload(value)))valid[row.name]={at:row.retrieved_at,value};
   }catch{/* Ignore a legacy or corrupt row, not the entire account snapshot. */}
+ };
+ for(const row of rows.results){
+  const key=row.name.replace(/^retry:/,'');
+  if(BASE_READ_TYPES.has(key))accept(row,key);
+ }
+ const readKeys=readPlan(valid);
+ for(const row of rows.results){
+  const key=row.name.replace(/^retry:/,'');
+  if(key.startsWith(PAPERWORK_PREFIX)&&readKeys.has(key))accept(row,key);
  }
  return valid;
 }
@@ -194,9 +213,9 @@ function privatePlans(env){
  }
  return overlayActionEvidence(overlayActionEvidence(parsed,env.AQ_ACTION_EVIDENCE),env.AQ_ACTION_CHECKPOINTS);
 }
-async function upstream(env,key,args={},upstreamFetch=(...args)=>globalThis.fetch(...args),now=Date.now(),previous){
+async function upstream(env,key,args={},upstreamFetch=(...args)=>globalThis.fetch(...args),now=Date.now(),previous,allowedReads=BASE_READ_TYPES){
  const write=key==='write_note';
- if(!env.DB||!env.AQ_TOKEN||(!write&&!READ_TYPES.has(key)))throw Error('Organizer not configured');
+ if(!env.DB||!env.AQ_TOKEN||(!write&&!allowedReads.has(key)))throw Error('Organizer not configured');
  if(!await reserve(env.DB,now))return {state:'cooldown'};
  const [name,account]=key.split(':'), id=now, at=new Date(now).toISOString();
  const response=await upstreamFetch(ORGANIZER_MCP,{method:'POST',redirect:'manual',headers:{
@@ -237,16 +256,20 @@ async function refresh(env,snapshot,upstreamFetch,now){
  const lastAttempt=key=>Date.parse(snapshot[retryKey(key)]?.at??'')||0;
  const previouslyFailed=key=>lastAttempt(key)>timing(key)||lastAttempt(key)===timing(key)&&snapshot[retryKey(key)]?.value?.failures>0;
  const available=key=>!previouslyFailed(key)||now>=snapshot[retryKey(key)].value.retryAt;
- const proposals=READS.filter(key=>!snapshot[key]||now-timing(key)>=REFRESH_EVERY[key]);
+ const intervals=readPlan(snapshot);
+ const proposals=[...intervals.keys()].filter(key=>!snapshot[key]||now-timing(key)>=intervals.get(key));
  const work=proposals.filter(available).sort((a,b)=>{
-  // Recover stale signals first, then let due reads use slots before the next stale threshold.
-  const priority=key=>key==='get_my_accounts'&&!snapshot[key]?0
-   :key==='get_signals'&&now-timing(key)>=SIGNAL_FRESH_MS?1:key==='get_signals'?3:2;
+  // A repository roster >=20 minutes past its normal interval takes the next slot.
+  // With sparse viewers, don't choose stale signals twice ahead of overdue paperwork.
+  const nonSignalLast=Math.max(0,...[...intervals.keys()].filter(k=>k!=='get_signals').map(k=>Math.max(timing(k),lastAttempt(k))));
+  const signalFirst=!snapshot.get_signals||now-timing('get_signals')>=SIGNAL_FRESH_MS&&nonSignalLast>=timing('get_signals');
+  const priority=key=>key==='get_my_accounts'&&(!snapshot[key]||now-timing(key)>=ROSTER_HARD_AGE)?0
+   :key==='get_signals'?signalFirst?1:3:2;
   return priority(a)-priority(b)||Number(Boolean(snapshot[a]))-Number(Boolean(snapshot[b]))
-   ||lastAttempt(a)-lastAttempt(b)||timing(a)+REFRESH_EVERY[a]-timing(b)-REFRESH_EVERY[b];
+   ||Math.max(lastAttempt(a),timing(a))+intervals.get(a)-Math.max(lastAttempt(b),timing(b))-intervals.get(b);
  })[0];
  if(!work)return {state:proposals.length?'retry-pending':'fresh'};
- try{return await upstream(env,work,{},upstreamFetch,now,snapshot[work]);}
+ try{return await upstream(env,work,{},upstreamFetch,now,snapshot[work],intervals);}
  catch(err){
   const failures=previouslyFailed(work)?(snapshot[retryKey(work)]?.value?.failures??0)+1:1;
   const reason=failureReason(err);
@@ -283,7 +306,7 @@ async function getLive(req,env,ctx,upstreamFetch,now){
   let results=await cache(env.DB);
   const signalAge=now-(Date.parse(results.get_signals?.at??'')||0);
   if(env.AQ_TOKEN){
-   if(results.get_my_accounts&&signalAge>SIGNAL_FRESH_MS){
+   if(results.get_my_accounts&&(signalAge>SIGNAL_FRESH_MS||now-Date.parse(results.get_my_accounts.at)>=ROSTER_INTERVAL)){
     const update=await refresh(env,results,upstreamFetch,now);
     if(update.state==='updated'||update.state==='failed')results=await cache(env.DB);
    }else ctx.waitUntil(refresh(env,results,upstreamFetch,now).catch(()=>{}));
@@ -292,11 +315,12 @@ async function getLive(req,env,ctx,upstreamFetch,now){
   results.confirmed_notes=await confirmedNotes(env.DB);
   const normalized=normalizeOrganizer(results,privatePlans(env));
   if(!normalized)return api({error:'Organizer data requires a compatible schema'},503);
-  const status=!normalized.signalCheckedAt?'awaiting-signals':!env.AQ_TOKEN||now-Date.parse(normalized.signalCheckedAt)>SIGNAL_FRESH_MS?'stale':!results['get_all_paperwork:A']||!results['get_all_paperwork:B']?'awaiting-paperwork':'ready';
+  const scopedIds=rosterIds(results.get_my_accounts);
+  const status=!normalized.signalCheckedAt?'awaiting-signals':!env.AQ_TOKEN||now-Date.parse(normalized.signalCheckedAt)>SIGNAL_FRESH_MS?'stale':scopedIds.some(id=>!results[paperworkKey(id)])?'awaiting-paperwork':'ready';
   const signalAttempt=results[retryKey('get_signals')];
   const lastFailed=Number.isFinite(signalAttempt?.value?.retryAt)&&(!normalized.signalCheckedAt||Date.parse(signalAttempt.at)>=Date.parse(normalized.signalCheckedAt));
   const syncHealth={accountsCheckedAt:results.get_my_accounts?.at??null,
-   paperworkCheckedAt:{A:results['get_all_paperwork:A']?.at??null,B:results['get_all_paperwork:B']?.at??null},signalState:!env.AQ_TOKEN?'not-connected':status==='stale'?'stale':!normalized.signalCheckedAt?'awaiting-first-check':normalized.accounts.some(a=>a.signals?.length)?'signals-present':'fresh-empty',
+   paperworkCheckedAt:Object.fromEntries(scopedIds.map(id=>[id,results[paperworkKey(id)]?.at??null])),signalState:!env.AQ_TOKEN?'not-connected':status==='stale'?'stale':!normalized.signalCheckedAt?'awaiting-first-check':normalized.accounts.some(a=>a.signals?.length)?'signals-present':'fresh-empty',
    ...(lastFailed&&{lastSignalFailureAt:signalAttempt.at,signalRetryAt:new Date(signalAttempt.value.retryAt).toISOString()})};
   return api(reviewerView({...withObservationTrail(normalized,results.get_signals),syncStatus:status,syncHealth,
    ...(typeof RELEASE_FINGERPRINT==='string'&&{releaseFingerprint:RELEASE_FINGERPRINT})}));
@@ -319,7 +343,7 @@ export function workerWith({upstreamFetch=(...args)=>globalThis.fetch(...args),n
      if(bytes.byteLength>8192)return api({error:'Note is too large'},413);
      const {account,title,text}=JSON.parse(new TextDecoder().decode(bytes));
      const snapshot=normalizeOrganizer(await cache(env.DB));
-     if(!snapshot?.accounts.some(x=>x.id===account)||typeof title!=='string'||!title.trim()||typeof text!=='string'||!text.trim())return api({error:'Valid account, title and note are required'},400);
+     if(!WRITE_NOTE_ACCOUNTS.has(account)||!snapshot?.accounts.some(x=>x.id===account)||typeof title!=='string'||!title.trim()||typeof text!=='string'||!text.trim())return api({error:'Valid account, title and note are required'},400);
      const answer=await upstream(env,'write_note',{account,title,text},upstreamFetch,now());
      if(answer.state==='cooldown')return api({error:'Organizer cooldown'},429,{'Retry-After':'61'});
      return api({ok:true,reviewerIndexWritten:answer.reviewerIndexWritten!==false,...(answer.receiptId&&{receiptId:answer.receiptId})});

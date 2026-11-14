@@ -1,6 +1,6 @@
 # Renewal Compass
 
-An evidence-first CRM for the customer-success manager walking into Monday. For each of two accounts, see what is worth protecting, who can move it, the next three actions, what could slip, and who can close each evidence gap.
+An evidence-first CRM for the customer-success manager walking into Monday. For each assigned account, see what is worth protecting, who can move it, the next three actions, what could slip, and who can close each evidence gap.
 
 **[Open the judge dashboard](https://renewal-compass-crm.tarun-aditya.chatgpt.site)** · **[Two-minute review guide](hosting/docs/REVIEW.md)** · **[Hosted implementation](hosting/README.md)**
 
@@ -52,3 +52,7 @@ The [judge-window refresh workflow](.github/workflows/questathon-refresh.yml) is
 Risk cards show the next move only when the account’s evidence uniquely supports the match. Exact duplicates are combined without merging distinct clocks, causes or actions. The same rule is tested on an unseen synthetic account.
 
 A copied action includes both available snapshot timestamps and asks the next owner to recheck before committing. The temporary independent judging check and GitHub workflow are bounded to the judging window. After the window, use **Refresh data** or open the dashboard to request the next eligible check; there is no native always-on scheduler.
+
+### Newly assigned accounts
+
+The roster refresh accepts organizer-assigned additions without code changes or guessed account IDs. The browser labels new-account paperwork and missing proof explicitly; old account data stays available. To verify an expanded publication, run `node scripts/check-public.mjs --min-accounts=3` from `hosting/`. The third-account regression uses synthetic data and does not establish that the organizer has assigned a third account to this player.
